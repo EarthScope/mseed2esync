@@ -886,7 +886,7 @@ addlistfile (char *filename)
 static void
 usage (void)
 {
-  fprintf (stderr, "%s - Mini-SEED  version: %s\n\n", PACKAGE, VERSION);
+  fprintf (stderr, "%s - Mini-SEED to Enhanced SYNC version: %s\n\n", PACKAGE, VERSION);
   fprintf (stderr, "Usage: %s [options] file1 [file2] [file3] ...\n\n", PACKAGE);
   fprintf (stderr,
 	   " ## General options ##\n"
