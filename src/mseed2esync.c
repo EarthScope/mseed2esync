@@ -381,6 +381,7 @@ printesynclist (MSTraceList *mstl, char *dccid)
 	  if ( seg->datasamples )
 	    {
 	      samplesize = ms_samplesize ( seg->sampletype );
+	      memset (&pms, 0, sizeof(md5_state_t));
 	      md5_init(&pms);
 	      md5_append(&pms, (const md5_byte_t *)seg->datasamples, (seg->numsamples * samplesize));
 	      md5_finish(&pms, digest);
