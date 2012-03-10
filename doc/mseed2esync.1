@@ -1,0 +1,152 @@
+.TH MSEED2ESYNC 1 2012/03/10
+.SH NAME
+Create an Enhanced SYNC Listing from Mini-SEED file(s)
+
+.SH SYNOPSIS
+.nf
+mseed2esync [options] file1 [file2 file3 ...]
+
+.fi
+.SH DESCRIPTION
+\fBmseed2esync\fP reads Mini-SEED, optionally subsetting to specific
+time ranges or channels, and prints an Enhanced SYNC listing.
+
+An Enhanced SYNC Listing includes the SEED quality indicator and an
+MD5 hash of the sample values.  The MD5 hash of the sample values
+allows time series segments to be compared without directly comparing
+the sample values.
+
+IMPORTANT: the MD5 hashing employed is dependent on the binary
+representation of the sample values on a given architecture.  Most
+architectures should generate comparable values but some may not,
+particularly for float type samples.
+
+The SEED quality code is included in the SYNC listing in the field
+historically used for "DCC Tape Number".
+
+The MD5 sample value hash is included in the SYNC listing in the field
+historically used for "DMC Volume Number".
+
+If '-' is specified standard input will be read.  Multiple input files
+will be processed in the order specified.
+
+Files on the command line prefixed with a '@' character are input list
+files and are expected to contain a simple list of input files, see
+\fBINPUT LIST FILE\fR for more details.
+
+When a input file is full SEED including both SEED headers and data
+records all of the headers will be skipped.
+
+.SH OPTIONS
+
+.IP "-V         "
+Print program version and exit.
+
+.IP "-h         "
+Print program usage and exit.
+
+.IP "-v         "
+Be more verbose.  This flag can be used multiple times ("-v -v" or
+"-vv") for more verbosity.
+
+.IP "-r \fIreclen\fP"
+Specify the input record length in bytes.  By default the
+record length of each input Mini-SEED record is automatically
+detected, this option forces the record length.
+
+.IP "-e \fIencoding\fP"
+Specify the data encoding format.  These encoding values are the same
+as those specified in the SEED 1000 Blockette.
+
+.IP "-ts \fItime\fP"
+Limit processing to Mini-SEED records that contain or start after
+\fItime\fP.  The format of the \fItime\fP arguement
+is: 'YYYY[,DDD,HH,MM,SS,FFFFFF]' where valid delimiters are either
+commas (,), colons (:) or periods (.).
+
+.IP "-te \fItime\fP"
+Limit processing to Mini-SEED records that contain or end before
+\fItime\fP.  The format of the \fItime\fP arguement
+is: 'YYYY[,DDD,HH,MM,SS,FFFFFF]' where valid delimiters are either
+commas (,), colons (:) or periods (.).
+
+.IP "-M \fImatch\fP"
+Limit processing to Mini-SEED records that match the \fImatch\fP
+regular expression.  For each input record a source name string
+composed of 'NET_STA_LOC_CHAN_QUAL' is created and compared to the
+regular expression.  If the match expression begins with an '@'
+character it is assumed to indicate a file containing a list of
+expressions to match, see the \fBMATCH OR REJECT LIST FILE\fR section
+below.
+
+.IP "-R \fIreject\fP"
+Limit processing to Mini-SEED records that do not match the
+\fIreject\fP regular expression.  For each input record a source name
+string composed of 'NET_STA_LOC_CHAN_QUAL' is created and compared to
+the regular expression.  If the reject expression begins with an '@'
+character it is assumed to indicate a file containing a list of
+expressions to reject, see the \fBMATCH OR REJECT LIST FILE\fR section
+below.
+
+.IP "-tt \fIsecs\fP"
+Specify a time tolerance for constructing continous trace
+segments. The tolerance is specified in seconds.  The default
+tolerance is 1/2 of the sample period.
+
+.IP "-rt \fIdiff\fP"
+Specify a sample rate tolerance for constructing continous trace
+segments. The tolerance is specified as the difference between two
+sampling rates.  The default tolerance is tested as: (abs(1-sr1/sr2) <
+0.0001).
+
+.SH "INPUT FILES"
+
+An input file name may be followed by an \fB@\fP charater followed by
+a byte offset.  In this case the program will interpret the byte
+offset as the starting offset into the file.  Useful for diagnosing
+specific records.  As an example an input file specified as
+\fBANMO.mseed@8192\fP would result in the file \fBANMO.mseed\fP being
+read starting at byte 8192.
+
+.SH "INPUT LIST FILE"
+A list file can be used to specify input files, one file per line.
+The initial '@' character indicating a list file is not considered
+part of the file name.  As an example, if the following command line
+option was used:
+
+.nf
+\fB@files.list\fP
+.fi
+
+The 'files.list' file might look like this:
+
+.nf
+data/day1.mseed
+data/day2.mseed
+data/day3.mseed
+.fi
+	
+.SH "MATCH OR REJECT LIST FILE"
+A list file used with either the \fB-M\fP or \fB-R\fP options contains
+a list of regular expressions (one on each line) that will be combined
+into a single compound expression.  The initial '@' character
+indicating a list file is not considered part of the file name.  As an
+example, if the following command line option was used:
+
+.nf
+\fB-M @match.list\fP
+.fi
+
+The 'match.list' file might look like this:
+
+.nf
+IU_ANMO_.*
+IU_ADK_00_BHZ.*
+II_BFO_00_BHZ_Q
+.fi
+
+.SH AUTHOR
+.nf
+Chad Trabant
+IRIS Data Management Center
+.fi
