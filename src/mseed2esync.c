@@ -10,7 +10,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2012.070
+ * modified 2012.118
  ***************************************************************************/
 
 #include <stdio.h>
@@ -27,6 +27,7 @@
 
 static void trimsegments (MSTraceList *mstl);
 static void printesynclist (MSTraceList *mstl, char *dccid);
+static void comparetraces (MSTraceList *mstl);
 static int processparam (int argcount, char **argvec);
 static char *getoptval (int argcount, char **argvec, int argopt);
 static int readregexfile (char *regexfile, char **pppattern);
@@ -35,10 +36,12 @@ static int addfile (char *filename);
 static int addlistfile (char *filename);
 static void usage (void);
 
-#define VERSION "0.1"
+#define VERSION "0.2"
 #define PACKAGE "mseed2esync"
 
+static int     retval       = 0;
 static flag    verbose      = 0;
+static flag    compare      = 0;
 static flag    dataquality  = 1;    /* Controls consideration of data quality */
 static flag    dataflag     = 1;    /* Controls decompression of data and production of MD5 */
 static double  timetol      = -1.0; /* Time tolerance for continuous traces */
@@ -197,25 +200,34 @@ main (int argc, char **argv)
       
       flp = flp->next;
     } /* End of looping over file list */
-
+  
   /* Trim each segment to specified time range */
   if ( starttime != HPTERROR || endtime != HPTERROR )
     trimsegments (mstl);
-
+  
   /* Print the ESYNC listing */
   printesynclist (mstl, dccidstr);
+  
+  if ( compare )
+    comparetraces (mstl);
   
   if ( mstl )
     mstl_free (&mstl, 0);
   
-  return 0;
+  return retval;
 }  /* End of main() */
 
 
 /***************************************************************************
  * trimsegments():
  *
- * Trim data segments to specified start and end times.
+ * Trim data segments to specified start and end times.  The specified
+ * or default time tolerance is used to liberally match sample times:
+ *
+ *   The first sample can be at start time minus the tolerance value
+ *   The last sample can be at the end time plus the tolerance value 
+ *
+ * If timetol is -1 the default tolerance of 1/2 sample period is used.
  *
  * Returns 0 on success, and -1 on failure
  ***************************************************************************/
@@ -227,6 +239,7 @@ trimsegments (MSTraceList *mstl)
 
   hptime_t sampletime;
   hptime_t hpdelta;
+  hptime_t hptimetol = 0;
   int64_t trimcount;
   int samplesize;
   void *datasamples;
@@ -254,6 +267,12 @@ trimsegments (MSTraceList *mstl)
 	  /* Calculate high-precision sample period */
 	  hpdelta = (hptime_t) (( seg->samprate ) ? (HPTMODULUS / seg->samprate) : 0.0);
 	  
+	  /* Calculate high-precision time tolerance */
+	  if ( timetol == -1.0 )
+	    hptimetol = (hptime_t) (0.5 * hpdelta);   /* Default time tolerance is 1/2 sample period */
+	  else if ( timetol >= 0.0 )
+	    hptimetol = (hptime_t) (timetol * HPTMODULUS);
+	  
 	  samplesize = ms_samplesize (seg->sampletype);
 	  
 	  /* Trim samples from beginning of segment if earlier than starttime */
@@ -261,7 +280,7 @@ trimsegments (MSTraceList *mstl)
 	    {
 	      trimcount = 0;
 	      sampletime = seg->starttime;
-	      while ( sampletime < starttime )
+	      while ( sampletime < (starttime - hptimetol) )
 		{
 		  sampletime += hpdelta;
 		  trimcount++;
@@ -270,9 +289,13 @@ trimsegments (MSTraceList *mstl)
 	      if ( trimcount > 0 && trimcount < seg->numsamples )
 		{
 		  if ( verbose )
-		    ms_log (1, "Trimming %lld samples from beginning of trace\n", (long long)trimcount);
+		    ms_log (1, "Trimming %lld samples from beginning of trace for %s\n",
+			    (long long)trimcount, id->srcname);
 		  
-		  memmove (seg->datasamples, seg->datasamples + (trimcount * samplesize), (trimcount * samplesize));
+		  memmove (seg->datasamples,
+			   (char *)seg->datasamples + (trimcount * samplesize),
+			   (seg->numsamples - trimcount) * samplesize);
+		  
 		  datasamples = realloc (seg->datasamples, (seg->numsamples - trimcount) * samplesize);
 		  
 		  if ( ! datasamples )
@@ -282,7 +305,7 @@ trimsegments (MSTraceList *mstl)
 		    }
 		  
 		  seg->datasamples = datasamples;
-		  seg->starttime = seg->starttime + MS_EPOCH2HPTIME((trimcount / seg->samprate));
+		  seg->starttime += MS_EPOCH2HPTIME((trimcount / seg->samprate));
 		  seg->numsamples -= trimcount;
 		  seg->samplecnt -= trimcount;
 		}
@@ -293,7 +316,7 @@ trimsegments (MSTraceList *mstl)
 	    {
 	      trimcount = 0;
 	      sampletime = seg->endtime;
-	      while ( sampletime > endtime )
+	      while ( sampletime > (endtime + hptimetol) )
 		{
 		  sampletime -= hpdelta;
 		  trimcount++;
@@ -302,7 +325,8 @@ trimsegments (MSTraceList *mstl)
 	      if ( trimcount > 0 && trimcount < seg->numsamples )
 		{
 		  if ( verbose )
-		    ms_log (1, "Trimming %lld samples from end of trace\n", (long long)trimcount);
+		    ms_log (1, "Trimming %lld samples from end of trace for %s\n",
+			    (long long)trimcount, id->srcname);
 		  
 		  datasamples = realloc (seg->datasamples, (seg->numsamples - trimcount) * samplesize);
 		  
@@ -313,7 +337,7 @@ trimsegments (MSTraceList *mstl)
 		    }
 		  
 		  seg->datasamples = datasamples;
-		  seg->endtime = seg->endtime - MS_EPOCH2HPTIME((trimcount / seg->samprate));
+		  seg->endtime -= MS_EPOCH2HPTIME((trimcount / seg->samprate));
 		  seg->numsamples -= trimcount;
 		  seg->samplecnt -= trimcount;
 		}
@@ -409,6 +433,165 @@ printesynclist (MSTraceList *mstl, char *dccid)
 
 
 /***************************************************************************
+ * comparetraces():
+ *
+ * Compare sample values for each segment
+ *
+ * Returns 0 on success, and -1 on failure
+ ***************************************************************************/
+static void
+comparetraces (MSTraceList *mstl)
+{
+  MSTraceID *id = 0;
+  MSTraceID *tid = 0;
+  MSTraceSeg *seg = 0;
+  MSTraceSeg *tseg = 0;
+  char start[30];
+  char end[30];
+  char tstart[30];
+  char tend[30];
+  int64_t idx = 0;
+  
+  if ( ! mstl )
+    {
+      return;
+    }
+  
+  /* Loop through trace list */
+  id = mstl->traces;  
+  while ( id )
+    {
+      /* Loop through segment list */
+      seg = id->first;
+      while ( seg )
+	{
+	  ms_hptime2seedtimestr (seg->starttime, start, 1);
+	  ms_hptime2seedtimestr (seg->endtime, end, 1);
+	  
+	  if ( ! seg->datasamples )
+	    {
+	      ms_log (2, "%s, %s, %s :: No data samples\n", id->srcname, start, end);
+	      seg = seg->next;
+	      continue;
+	    }
+	  
+	  /* Loop through trace list for targets */
+	  tid = id;
+	  while ( tid )
+	    {
+	      /* Loop through target segment list */
+	      tseg = ( tid == id ) ? seg->next : tid->first;
+	      while ( tseg )
+		{
+		  if ( ! tseg->datasamples )
+		    {
+		      ms_log (1, "%s, %s, %s :: No data samples\n", tid->srcname, tstart, tend);
+		      tseg = tseg->next;
+		      continue;
+		    }
+		  
+		  ms_hptime2seedtimestr (tseg->starttime, tstart, 1);
+		  ms_hptime2seedtimestr (tseg->endtime, tend, 1);
+		  
+		  if ( seg->sampletype != tseg->sampletype )
+		    {
+		      ms_log (1, "%s and %s :: Sample type mismatch\n", id->srcname, tid->srcname);
+		      tseg = tseg->next;
+		      continue;
+		    }
+		  
+		  if ( seg->numsamples != tseg->numsamples )
+		    {
+		      ms_log (1, "%s (%lld) and %s (%lld) :: Sample count mismatch\n",
+			      id->srcname, (long long int) seg->numsamples,
+			      tid->srcname, (long long int) tseg->numsamples);
+		      tseg = tseg->next;
+		      continue;
+		    }
+		  
+		  if ( seg->sampletype == 'i' )
+		    {
+		      int32_t *data = (int32_t*) seg->datasamples;
+		      int32_t *tdata = (int32_t*) tseg->datasamples;
+		      
+		      for (idx=0; idx < seg->numsamples; idx++)
+			if ( data[idx] != tdata[idx] )
+			  {
+			    ms_log (0, "Time series are NOT the same, differing at sample %lld (%d versus %d)\n",
+				    (long long int)idx+1, data[idx], tdata[idx]);
+			    retval = 1;
+			    break;
+			  }
+		    }
+		  else if ( seg->sampletype == 'f' )
+		    {
+		      float *data = (float*) seg->datasamples;
+		      float *tdata = (float*) tseg->datasamples;
+		      
+		      for (idx=0; idx < seg->numsamples; idx++)
+			if ( data[idx] != tdata[idx] )
+			  {
+			    ms_log (0, "Time series are NOT the same, differing at sample %lld (%f versus %f)\n",
+				    (long long int)idx+1, data[idx], tdata[idx]);
+			    retval = 1;
+			    break;
+			  }
+		    }
+		  else if ( seg->sampletype == 'd' )
+		    {
+		      double *data = (double*) seg->datasamples;
+		      double *tdata = (double*) tseg->datasamples;
+		      
+		      for (idx=0; idx < seg->numsamples; idx++)
+			if ( data[idx] != tdata[idx] )
+			  {
+			    ms_log (0, "Time series are NOT the same, differing at sample %lld (%f versus %f)\n",
+				    (long long int)idx+1, data[idx], tdata[idx]);
+			    retval = 1;
+			    break;
+			  }
+		    }
+		  else if ( seg->sampletype == 'a' )
+		    {
+		      char *data = (char*) seg->datasamples;
+		      char *tdata = (char*) tseg->datasamples;
+		      
+		      for (idx=0; idx < seg->numsamples; idx++)
+			if ( data[idx] != tdata[idx] )
+			  {
+			    ms_log (0, "Time series are NOT the same, differing at sample %lld (%c versus %c)\n",
+				    (long long int)idx+1, data[idx], tdata[idx]);
+			    retval = 1;
+			    break;
+			  }
+		    }
+		  
+		  if ( idx == seg->numsamples )
+		    {
+		      ms_log (0, "Time series are the same, %lld samples compared\n",
+			      (long long int)idx);
+		    }
+		  
+		  ms_log (0, "  %s  %s  %s\n", id->srcname, start, end);
+		  ms_log (0, "  %s  %s  %s\n", tid->srcname, tstart, tend);
+		  
+		  tseg = tseg->next;
+		}
+	      
+	      tid = tid->next;
+	    }
+	  
+	  seg = seg->next;
+	}
+      
+      id = id->next;
+    }
+
+  return;
+}  /* End of comparetraces() */
+
+
+/***************************************************************************
  * parameter_proc():
  * Process the command line parameters.
  *
@@ -450,6 +633,10 @@ processparam (int argcount, char **argvec)
       else if (strcmp (argvec[optind], "-D") == 0)
 	{
 	  dccidstr = getoptval(argcount, argvec, optind++);
+	}
+      else if (strcmp (argvec[optind], "-C") == 0)
+	{
+	  compare = 1;
 	}
       else if (strcmp (argvec[optind], "-ts") == 0)
 	{
@@ -897,6 +1084,7 @@ usage (void)
 	   " -r reclen    Specify record length in bytes, default is autodetection\n"
 	   " -e encoding  Specify encoding format of data samples\n"
 	   " -D DCCID     Specify the DCC identifier for SYNC header\n"
+	   " -C           Compare sample values of time series, to diagnose mismatches\n"
 	   "\n"
 	   " ## Data selection options ##\n"
 	   " -ts time     Limit to samples that start on or after time\n"

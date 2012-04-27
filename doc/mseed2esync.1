@@ -1,4 +1,4 @@
-.TH MSEED2ESYNC 1 2012/03/10
+.TH MSEED2ESYNC 1 2012/04/27
 .SH NAME
 Create an Enhanced SYNC Listing from Mini-SEED file(s)
 
@@ -57,6 +57,15 @@ detected, this option forces the record length.
 .IP "-e \fIencoding\fP"
 Specify the data encoding format.  These encoding values are the same
 as those specified in the SEED 1000 Blockette.
+
+.IP "-D \fIDCCID\fP"
+Specify the a data center identifier to place in the SYNC file header.
+If not specified it will be left empty in the header.
+
+.IP "-C         "
+Compare the sample values between each segment of data being
+processed, useful for diagnosing differences.  If all of the segments
+processed match the exit value of the program will be 0, otherwise 1.
 
 .IP "-ts \fItime\fP"
 Limit processing to Mini-SEED records that contain or start after
