@@ -36,7 +36,7 @@ static int addfile (char *filename);
 static int addlistfile (char *filename);
 static void usage (void);
 
-#define VERSION "0.2"
+#define VERSION "0.3"
 #define PACKAGE "mseed2esync"
 
 static int     retval       = 0;

@@ -1,3 +1,6 @@
+2013.274: 0.3
+	- Update libmseed to 2.12 release.
+
 2012.112: 0.2
 	- Use sample time tolerance when trimming traces to specified time window.
 	- Add -C option to compare time series and report where they are different,
