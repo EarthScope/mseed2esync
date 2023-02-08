@@ -1,4 +1,4 @@
-# mseed2esync - Mini-SEED 2 Enhanced SYNC Listing
+# mseed2esync - miniSEED 2 Enhanced SYNC Listing
 
 Enhanced SYNC listings are a representation used to compare data holdings.
 
