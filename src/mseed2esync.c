@@ -71,36 +71,36 @@ main (int argc, char **argv)
   MSRecord *msr = 0;
   MSTraceList *mstl = 0;
   int retcode = MS_NOERROR;
-  
+
   char envvariable[100];
   off_t filepos = 0;
-  
+
   char srcname[50];
   char stime[30];
-  
+
   /* Set default error message prefix */
   ms_loginit (NULL, NULL, NULL, "ERROR: ");
-  
+
   /* Process given parameters (command line and parameter file) */
   if ( processparam (argc, argv) < 0 )
     return 1;
-  
+
   /* Setup encoding environment variable if specified, ugly kludge */
   if ( encodingstr )
     {
       snprintf (envvariable, sizeof(envvariable), "UNPACK_DATA_FORMAT=%s", encodingstr);
-      
+
       if ( putenv (envvariable) )
 	{
 	  ms_log (2, "Cannot set environment variable UNPACK_DATA_FORMAT\n");
 	  return 1;
 	}
     }
-  
+
   mstl = mstl_init (NULL);
-  
+
   flp = filelist;
-  
+
   while ( flp != 0 )
     {
       if ( verbose >= 2 )
@@ -110,22 +110,22 @@ main (int argc, char **argv)
 	  else
 	    ms_log (1, "Processing: %s\n", flp->filename);
 	}
-      
+
       /* Set starting byte offset if supplied as negative file position */
       filepos = - flp->offset;
-      
+
       /* Loop over the input file */
       for (;;)
 	{
 	  if ( (retcode = ms_readmsr (&msr, flp->filename, reclen, &filepos,
 				      NULL, 1, dataflag, verbose)) != MS_NOERROR )
 	    break;
-	  
+
 	  /* Check if record matches start/end time criteria */
 	  if ( starttime != HPTERROR || endtime != HPTERROR )
 	    {
 	      hptime_t recendtime = msr_endtime (msr);
-	      
+
 	      if ( starttime != HPTERROR && (msr->starttime < starttime && ! (msr->starttime <= starttime && recendtime >= starttime)) )
 		{
 		  if ( verbose >= 3 )
@@ -136,7 +136,7 @@ main (int argc, char **argv)
 		    }
 		  continue;
 		}
-	      
+
 	      if ( endtime != HPTERROR && (recendtime > endtime && ! (msr->starttime <= endtime && recendtime >= endtime)) )
 		{
 		  if ( verbose >= 3 )
@@ -148,12 +148,12 @@ main (int argc, char **argv)
 		  continue;
 		}
 	    }
-	  
+
 	  if ( match || reject )
 	    {
 	      /* Generate the srcname with the quality code */
 	      msr_srcname (msr, srcname, 1);
-	      
+
 	      /* Check if record is matched by the match regex */
 	      if ( match )
 		{
@@ -167,7 +167,7 @@ main (int argc, char **argv)
 		      continue;
 		    }
 		}
-	      
+
 	      /* Check if record is rejected by the reject regex */
 	      if ( reject )
 		{
@@ -182,11 +182,11 @@ main (int argc, char **argv)
 		    }
 		}
 	    }
-	  
+
 	  /* Add to TraceList */
 	  mstl_addmsr (mstl, msr, dataquality, 1, timetol, sampratetol);
 	}
-      
+
       /* Print error if not EOF and not counting down records */
       if ( retcode != MS_ENDOFFILE )
 	{
@@ -194,26 +194,26 @@ main (int argc, char **argv)
 	  ms_readmsr (&msr, NULL, 0, NULL, NULL, 0, 0, 0);
 	  exit (1);
 	}
-      
+
       /* Make sure everything is cleaned up */
       ms_readmsr (&msr, NULL, 0, NULL, NULL, 0, 0, 0);
-      
+
       flp = flp->next;
     } /* End of looping over file list */
-  
+
   /* Trim each segment to specified time range */
   if ( starttime != HPTERROR || endtime != HPTERROR )
     trimsegments (mstl);
-  
+
   /* Print the ESYNC listing */
   printesynclist (mstl, dccidstr);
-  
+
   if ( compare )
     comparetraces (mstl);
-  
+
   if ( mstl )
     mstl_free (&mstl, 0);
-  
+
   return retval;
 }  /* End of main() */
 
@@ -225,7 +225,7 @@ main (int argc, char **argv)
  * or default time tolerance is used to liberally match sample times:
  *
  *   The first sample can be at start time minus the tolerance value
- *   The last sample can be at the end time plus the tolerance value 
+ *   The last sample can be at the end time plus the tolerance value
  *
  * If timetol is -1 the default tolerance of 1/2 sample period is used.
  *
@@ -243,14 +243,14 @@ trimsegments (MSTraceList *mstl)
   int64_t trimcount;
   int samplesize;
   void *datasamples;
-  
+
   if ( ! mstl )
     {
       return;
     }
 
   /* Loop through trace list */
-  id = mstl->traces;  
+  id = mstl->traces;
   while ( id )
     {
       /* Loop through segment list */
@@ -263,18 +263,18 @@ trimsegments (MSTraceList *mstl)
 	      seg = seg->next;
 	      continue;
 	    }
-	  
+
 	  /* Calculate high-precision sample period */
 	  hpdelta = (hptime_t) (( seg->samprate ) ? (HPTMODULUS / seg->samprate) : 0.0);
-	  
+
 	  /* Calculate high-precision time tolerance */
 	  if ( timetol == -1.0 )
 	    hptimetol = (hptime_t) (0.5 * hpdelta);   /* Default time tolerance is 1/2 sample period */
 	  else if ( timetol >= 0.0 )
 	    hptimetol = (hptime_t) (timetol * HPTMODULUS);
-	  
+
 	  samplesize = ms_samplesize (seg->sampletype);
-	  
+
 	  /* Trim samples from beginning of segment if earlier than starttime */
 	  if ( starttime != HPTERROR && seg->starttime < starttime )
 	    {
@@ -285,32 +285,32 @@ trimsegments (MSTraceList *mstl)
 		  sampletime += hpdelta;
 		  trimcount++;
 		}
-	      
+
 	      if ( trimcount > 0 && trimcount < seg->numsamples )
 		{
 		  if ( verbose )
 		    ms_log (1, "Trimming %lld samples from beginning of trace for %s\n",
 			    (long long)trimcount, id->srcname);
-		  
+
 		  memmove (seg->datasamples,
 			   (char *)seg->datasamples + (trimcount * samplesize),
 			   (seg->numsamples - trimcount) * samplesize);
-		  
+
 		  datasamples = realloc (seg->datasamples, (seg->numsamples - trimcount) * samplesize);
-		  
+
 		  if ( ! datasamples )
 		    {
 		      ms_log (2, stderr, "Cannot reallocate sample buffer\n");
 		      return;
 		    }
-		  
+
 		  seg->datasamples = datasamples;
 		  seg->starttime += MS_EPOCH2HPTIME((trimcount / seg->samprate));
 		  seg->numsamples -= trimcount;
 		  seg->samplecnt -= trimcount;
 		}
 	    }
-	  
+
 	  /* Trim samples from end of segment if later than endtime */
 	  if ( endtime != HPTERROR && seg->endtime > endtime )
 	    {
@@ -321,34 +321,34 @@ trimsegments (MSTraceList *mstl)
 		  sampletime -= hpdelta;
 		  trimcount++;
 		}
-	      
+
 	      if ( trimcount > 0 && trimcount < seg->numsamples )
 		{
 		  if ( verbose )
 		    ms_log (1, "Trimming %lld samples from end of trace for %s\n",
 			    (long long)trimcount, id->srcname);
-		  
+
 		  datasamples = realloc (seg->datasamples, (seg->numsamples - trimcount) * samplesize);
-		  
+
 		  if ( ! datasamples )
 		    {
 		      ms_log (2, stderr, "Cannot reallocate sample buffer\n");
 		      return;
 		    }
-		  
+
 		  seg->datasamples = datasamples;
 		  seg->endtime -= MS_EPOCH2HPTIME((trimcount / seg->samprate));
 		  seg->numsamples -= trimcount;
 		  seg->samplecnt -= trimcount;
 		}
 	    }
-	  
+
 	  seg = seg->next;
 	}
-      
+
       id = id->next;
     }
-  
+
   return;
 }  /* End of trimsegments() */
 
@@ -381,17 +381,17 @@ printesynclist (MSTraceList *mstl, char *dccid)
     {
       return;
     }
-  
+
   /* Generate current time stamp */
   now = time (NULL);
   nt = localtime ( &now ); nt->tm_year += 1900; nt->tm_yday += 1;
   snprintf ( yearday, sizeof(yearday), "%04d,%03d", nt->tm_year, nt->tm_yday);
-  
+
   /* Print SYNC header line */
   ms_log (0, "%s|%s\n", (dccid)?dccid:"DCC", yearday);
-  
+
   /* Loop through trace list */
-  id = mstl->traces;  
+  id = mstl->traces;
   while ( id )
     {
       /* Loop through segment list */
@@ -400,7 +400,7 @@ printesynclist (MSTraceList *mstl, char *dccid)
 	{
 	  ms_hptime2seedtimestr (seg->starttime, starttime, 1);
 	  ms_hptime2seedtimestr (seg->endtime, endtime, 1);
-	  
+
 	  /* Calculate MD5 hash of sample values if samples present */
 	  if ( seg->datasamples )
 	    {
@@ -409,7 +409,7 @@ printesynclist (MSTraceList *mstl, char *dccid)
 	      md5_init(&pms);
 	      md5_append(&pms, (const md5_byte_t *)seg->datasamples, (seg->numsamples * samplesize));
 	      md5_finish(&pms, digest);
-	      
+
 	      for (idx=0; idx < 16; idx++)
 		sprintf (digeststr+(idx*2), "%02x", digest[idx]);
 	    }
@@ -421,10 +421,10 @@ printesynclist (MSTraceList *mstl, char *dccid)
 		  (id->dataquality) ? &(id->dataquality) : "",
 		  (seg->datasamples) ? digeststr : "",
 		  yearday);
-	  
+
 	  seg = seg->next;
 	}
-      
+
       id = id->next;
     }
 
@@ -451,14 +451,14 @@ comparetraces (MSTraceList *mstl)
   char tstart[30];
   char tend[30];
   int64_t idx = 0;
-  
+
   if ( ! mstl )
     {
       return;
     }
-  
+
   /* Loop through trace list */
-  id = mstl->traces;  
+  id = mstl->traces;
   while ( id )
     {
       /* Loop through segment list */
@@ -467,14 +467,14 @@ comparetraces (MSTraceList *mstl)
 	{
 	  ms_hptime2seedtimestr (seg->starttime, start, 1);
 	  ms_hptime2seedtimestr (seg->endtime, end, 1);
-	  
+
 	  if ( ! seg->datasamples )
 	    {
 	      ms_log (2, "%s, %s, %s :: No data samples\n", id->srcname, start, end);
 	      seg = seg->next;
 	      continue;
 	    }
-	  
+
 	  /* Loop through trace list for targets */
 	  tid = id;
 	  while ( tid )
@@ -489,17 +489,17 @@ comparetraces (MSTraceList *mstl)
 		      tseg = tseg->next;
 		      continue;
 		    }
-		  
+
 		  ms_hptime2seedtimestr (tseg->starttime, tstart, 1);
 		  ms_hptime2seedtimestr (tseg->endtime, tend, 1);
-		  
+
 		  if ( seg->sampletype != tseg->sampletype )
 		    {
 		      ms_log (1, "%s and %s :: Sample type mismatch\n", id->srcname, tid->srcname);
 		      tseg = tseg->next;
 		      continue;
 		    }
-		  
+
 		  if ( seg->numsamples != tseg->numsamples )
 		    {
 		      ms_log (1, "%s (%lld) and %s (%lld) :: Sample count mismatch\n",
@@ -508,12 +508,12 @@ comparetraces (MSTraceList *mstl)
 		      tseg = tseg->next;
 		      continue;
 		    }
-		  
+
 		  if ( seg->sampletype == 'i' )
 		    {
 		      int32_t *data = (int32_t*) seg->datasamples;
 		      int32_t *tdata = (int32_t*) tseg->datasamples;
-		      
+
 		      for (idx=0; idx < seg->numsamples; idx++)
 			if ( data[idx] != tdata[idx] )
 			  {
@@ -527,7 +527,7 @@ comparetraces (MSTraceList *mstl)
 		    {
 		      float *data = (float*) seg->datasamples;
 		      float *tdata = (float*) tseg->datasamples;
-		      
+
 		      for (idx=0; idx < seg->numsamples; idx++)
 			if ( data[idx] != tdata[idx] )
 			  {
@@ -541,7 +541,7 @@ comparetraces (MSTraceList *mstl)
 		    {
 		      double *data = (double*) seg->datasamples;
 		      double *tdata = (double*) tseg->datasamples;
-		      
+
 		      for (idx=0; idx < seg->numsamples; idx++)
 			if ( data[idx] != tdata[idx] )
 			  {
@@ -555,7 +555,7 @@ comparetraces (MSTraceList *mstl)
 		    {
 		      char *data = (char*) seg->datasamples;
 		      char *tdata = (char*) tseg->datasamples;
-		      
+
 		      for (idx=0; idx < seg->numsamples; idx++)
 			if ( data[idx] != tdata[idx] )
 			  {
@@ -565,25 +565,25 @@ comparetraces (MSTraceList *mstl)
 			    break;
 			  }
 		    }
-		  
+
 		  if ( idx == seg->numsamples )
 		    {
 		      ms_log (0, "Time series are the same, %lld samples compared\n",
 			      (long long int)idx);
 		    }
-		  
+
 		  ms_log (0, "  %s  %s  %s\n", id->srcname, start, end);
 		  ms_log (0, "  %s  %s  %s\n", tid->srcname, tstart, tend);
-		  
+
 		  tseg = tseg->next;
 		}
-	      
+
 	      tid = tid->next;
 	    }
-	  
+
 	  seg = seg->next;
 	}
-      
+
       id = id->next;
     }
 
@@ -604,7 +604,7 @@ processparam (int argcount, char **argvec)
   char *matchpattern = 0;
   char *rejectpattern = 0;
   char *tptr;
-  
+
   /* Process all command line arguments */
   for (optind = 1; optind < argcount; optind++)
     {
@@ -675,7 +675,7 @@ processparam (int argcount, char **argvec)
       else
 	{
 	  tptr = argvec[optind];
-	  
+
           /* Check for an input file list */
           if ( tptr[0] == '@' )
             {
@@ -697,7 +697,7 @@ processparam (int argcount, char **argvec)
             }
 	}
     }
-  
+
   /* Make sure input file were specified */
   if ( filelist == 0 )
     {
@@ -706,7 +706,7 @@ processparam (int argcount, char **argvec)
       ms_log (1, "Try %s -h for usage\n", PACKAGE);
       exit (1);
     }
-  
+
   /* Expand match pattern from a file if prefixed by '@' */
   if ( matchpattern )
     {
@@ -715,17 +715,17 @@ processparam (int argcount, char **argvec)
 	  tptr = strdup(matchpattern + 1); /* Skip the @ sign */
 	  free (matchpattern);
 	  matchpattern = 0;
-	  
+
 	  if ( readregexfile (tptr, &matchpattern) <= 0 )
 	    {
 	      ms_log (2, "Cannot read match pattern regex file\n");
 	      exit (1);
 	    }
-	  
+
 	  free (tptr);
 	}
     }
-  
+
   /* Expand reject pattern from a file if prefixed by '@' */
   if ( rejectpattern )
     {
@@ -734,22 +734,22 @@ processparam (int argcount, char **argvec)
 	  tptr = strdup(rejectpattern + 1); /* Skip the @ sign */
 	  free (rejectpattern);
 	  rejectpattern = 0;
-	  
+
 	  if ( readregexfile (tptr, &rejectpattern) <= 0 )
 	    {
 	      ms_log (2, "Cannot read reject pattern regex file\n");
 	      exit (1);
 	    }
-	  
+
 	  free (tptr);
 	}
     }
-  
+
   /* Compile match and reject patterns */
   if ( matchpattern )
     {
       match = (regex_t *) malloc (sizeof(regex_t));
-      
+
       if ( regcomp (match, matchpattern, REG_EXTENDED) != 0)
 	{
 	  ms_log (2, "Cannot compile match regex: '%s'\n", matchpattern);
@@ -757,30 +757,30 @@ processparam (int argcount, char **argvec)
 
       free (matchpattern);
     }
-  
+
   if ( rejectpattern )
     {
       reject = (regex_t *) malloc (sizeof(regex_t));
-      
+
       if ( regcomp (reject, rejectpattern, REG_EXTENDED) != 0)
 	{
 	  ms_log (2, "Cannot compile reject regex: '%s'\n", rejectpattern);
 	}
-      
+
       free (rejectpattern);
     }
-  
+
   /* Report the program version */
   if ( verbose )
     ms_log (1, "%s version: %s\n", PACKAGE, VERSION);
-  
+
   return 0;
 }  /* End of parameter_proc() */
 
 
 /***************************************************************************
  * getoptval:
- * Return the value to a command line option; checking that the value is 
+ * Return the value to a command line option; checking that the value is
  * itself not an option (starting with '-') and is not past the end of
  * the argument list.
  *
@@ -798,21 +798,21 @@ getoptval (int argcount, char **argvec, int argopt)
     exit (1);
     return 0;
   }
-  
+
   /* Special case of '-o -' usage */
   if ( (argopt+1) < argcount && strcmp (argvec[argopt], "-o") == 0 )
     if ( strcmp (argvec[argopt+1], "-") == 0 )
       return argvec[argopt+1];
-  
+
   /* Special cases of '-gmin' and '-gmax' with negative numbers */
   if ( (argopt+1) < argcount &&
        (strcmp (argvec[argopt], "-gmin") == 0 || (strcmp (argvec[argopt], "-gmax") == 0)))
     if ( lisnumber(argvec[argopt+1]) )
       return argvec[argopt+1];
-  
+
   if ( (argopt+1) < argcount && *argvec[argopt+1] != '-' )
     return argvec[argopt+1];
-  
+
   ms_log (2, "Option %s requires a value, try -h for usage\n", argvec[argopt]);
   exit (1);
   return 0;
@@ -839,19 +839,19 @@ readregexfile (char *regexfile, char **pppattern)
   int   regexcnt = 0;
   int   lengthbase;
   int   lengthadd;
-  
+
   if ( ! regexfile )
     {
       ms_log (2, "readregexfile: regex file not supplied\n");
       return -1;
     }
-  
+
   if ( ! pppattern )
     {
       ms_log (2, "readregexfile: pattern string buffer not supplied\n");
       return -1;
     }
-  
+
   /* Open the regex list file */
   if ( (fp = fopen (regexfile, "rb")) == NULL )
     {
@@ -859,32 +859,32 @@ readregexfile (char *regexfile, char **pppattern)
 	      regexfile, strerror (errno));
       return -1;
     }
-  
+
   if ( verbose )
     ms_log (1, "Reading regex list from %s\n", regexfile);
-  
+
   *pppattern = NULL;
-  
+
   while ( (fgets (line, sizeof(line), fp)) !=  NULL)
     {
       /* Trim spaces and skip if empty lines */
       if ( sscanf (line, " %s ", linepattern) != 1 )
 	continue;
-      
+
       /* Skip comment lines */
       if ( *linepattern == '#' )
 	continue;
-      
+
       regexcnt++;
-      
+
       /* Add regex to compound regex */
       if ( *pppattern )
 	{
 	  lengthbase = strlen(*pppattern);
 	  lengthadd = strlen(linepattern) + 4; /* Length of addition plus 4 characters: |()\0 */
-	  
+
 	  *pppattern = realloc (*pppattern, lengthbase + lengthadd);
-	  
+
 	  if ( *pppattern )
 	    {
 	      snprintf ((*pppattern)+lengthbase, lengthadd, "|(%s)", linepattern);
@@ -898,9 +898,9 @@ readregexfile (char *regexfile, char **pppattern)
       else
 	{
 	  lengthadd = strlen(linepattern) + 3; /* Length of addition plus 3 characters: ()\0 */
-	  
+
 	  *pppattern = malloc (lengthadd);
-	  
+
 	  if ( *pppattern )
 	    {
 	      snprintf (*pppattern, lengthadd, "(%s)", linepattern);
@@ -912,9 +912,9 @@ readregexfile (char *regexfile, char **pppattern)
 	    }
 	}
     }
-  
+
   fclose (fp);
-  
+
   return regexcnt;
 }  /* End of readregexfile() */
 
@@ -930,7 +930,7 @@ static int
 lisnumber (char *number)
 {
   int idx = 0;
-  
+
   while ( *(number+idx) )
     {
       if ( idx == 0 && *(number+idx) == '-' )
@@ -946,8 +946,8 @@ lisnumber (char *number)
 
       idx++;
     }
-  
-  return 1;      
+
+  return 1;
 }  /* End of lisnumber() */
 
 
@@ -963,21 +963,21 @@ addfile (char *filename)
 {
   struct filelink *newlp;
   char *at;
-  
+
   if ( filename == NULL )
     {
       ms_log (2, "addfile(): No file name specified\n");
       return -1;
     }
-  
+
   newlp = (struct filelink *) calloc (1, sizeof (struct filelink));
-  
+
   if ( ! newlp )
     {
       ms_log (2, "addfile(): Cannot allocate memory\n");
       return -1;
     }
-  
+
   /* Check for starting offset */
   if ( (at = strrchr (filename, '@')) )
     {
@@ -988,15 +988,15 @@ addfile (char *filename)
     {
       newlp->offset = 0;
     }
-  
+
   newlp->filename = strdup(filename);
-  
+
   if ( ! newlp->filename )
     {
       ms_log (2, "addfile(): Cannot duplicate string\n");
       return -1;
     }
-  
+
   /* Add new file to the end of the list */
   if ( filelisttail == 0 )
     {
@@ -1008,7 +1008,7 @@ addfile (char *filename)
       filelisttail->next = newlp;
       filelisttail = newlp;
     }
-  
+
   return 0;
 }  /* End of addfile() */
 
@@ -1021,48 +1021,48 @@ addfile (char *filename)
  * Returns count of files added on success and -1 on error.
  ***************************************************************************/
 static int
-addlistfile (char *filename) 
+addlistfile (char *filename)
 {
   FILE *fp;
   char filelistent[1024];
   int filecount = 0;
-  
+
   if ( verbose >= 1 )
     ms_log (1, "Reading list file '%s'\n", filename);
-  
+
   if ( ! (fp = fopen(filename, "rb")) )
     {
       ms_log (2, "Cannot open list file %s: %s\n", filename, strerror(errno));
       return -1;
     }
-  
+
   while ( fgets (filelistent, sizeof(filelistent), fp) )
     {
       char *cp;
-      
+
       /* End string at first newline character */
       if ( (cp = strchr(filelistent, '\n')) )
         *cp = '\0';
-      
+
       /* Skip empty lines */
       if ( ! strlen (filelistent) )
         continue;
-      
+
       /* Skip comment lines */
       if ( *filelistent == '#' )
         continue;
-      
+
       if ( verbose > 1 )
         ms_log (1, "Adding '%s' from list file\n", filelistent);
-      
+
       if ( addfile (filelistent) )
         return -1;
-      
+
       filecount++;
     }
-  
+
   fclose (fp);
-  
+
   return filecount;
 }  /* End of addlistfile() */
 
