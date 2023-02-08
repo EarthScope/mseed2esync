@@ -1,6 +1,6 @@
 .TH MSEED2ESYNC 1 2012/04/27
 .SH NAME
-Create an Enhanced SYNC Listing from Mini-SEED file(s)
+Create an Enhanced SYNC Listing from miniSEED file(s)
 
 .SH SYNOPSIS
 .nf
@@ -8,7 +8,7 @@ mseed2esync [options] file1 [file2 file3 ...]
 
 .fi
 .SH DESCRIPTION
-\fBmseed2esync\fP reads Mini-SEED, optionally subsetting to specific
+\fBmseed2esync\fP reads miniSEED, optionally subsetting to specific
 time ranges or channels, and prints an Enhanced SYNC listing.
 
 An Enhanced SYNC Listing includes the SEED quality indicator and an
@@ -51,8 +51,8 @@ Be more verbose.  This flag can be used multiple times ("-v -v" or
 
 .IP "-r \fIreclen\fP"
 Specify the input record length in bytes.  By default the
-record length of each input Mini-SEED record is automatically
-detected, this option forces the record length.
+record length of each input miniSEED record is automatically
+detected, this option forces the  record length.
 
 .IP "-e \fIencoding\fP"
 Specify the data encoding format.  These encoding values are the same
@@ -68,19 +68,19 @@ processed, useful for diagnosing differences.  If all of the segments
 processed match the exit value of the program will be 0, otherwise 1.
 
 .IP "-ts \fItime\fP"
-Limit processing to Mini-SEED records that contain or start after
+Limit processing to miniSEED records that contain or start after
 \fItime\fP.  The format of the \fItime\fP arguement
 is: 'YYYY[,DDD,HH,MM,SS,FFFFFF]' where valid delimiters are either
 commas (,), colons (:) or periods (.).
 
 .IP "-te \fItime\fP"
-Limit processing to Mini-SEED records that contain or end before
+Limit processing to miniSEED records that contain or end before
 \fItime\fP.  The format of the \fItime\fP arguement
 is: 'YYYY[,DDD,HH,MM,SS,FFFFFF]' where valid delimiters are either
 commas (,), colons (:) or periods (.).
 
 .IP "-M \fImatch\fP"
-Limit processing to Mini-SEED records that match the \fImatch\fP
+Limit processing to miniSEED records that match the \fImatch\fP
 regular expression.  For each input record a source name string
 composed of 'NET_STA_LOC_CHAN_QUAL' is created and compared to the
 regular expression.  If the match expression begins with an '@'
@@ -89,7 +89,7 @@ expressions to match, see the \fBMATCH OR REJECT LIST FILE\fR section
 below.
 
 .IP "-R \fIreject\fP"
-Limit processing to Mini-SEED records that do not match the
+Limit processing to miniSEED records that do not match the
 \fIreject\fP regular expression.  For each input record a source name
 string composed of 'NET_STA_LOC_CHAN_QUAL' is created and compared to
 the regular expression.  If the reject expression begins with an '@'
@@ -134,7 +134,7 @@ data/day1.mseed
 data/day2.mseed
 data/day3.mseed
 .fi
-	
+
 .SH "MATCH OR REJECT LIST FILE"
 A list file used with either the \fB-M\fP or \fB-R\fP options contains
 a list of regular expressions (one on each line) that will be combined

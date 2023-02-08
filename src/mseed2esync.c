@@ -1,7 +1,7 @@
 /***************************************************************************
- * mseed2esync.c - Mini-SEED to Enhanced SYNC Listing
+ * mseed2esync.c - miniSEED to Enhanced SYNC Listing
  *
- * Opens a user specified file, parses the Mini-SEED records and prints
+ * Opens a user specified file, parses the miniSEED records and prints
  * an Enhanced SYNC Listing.
  *
  * In general critical error messages are prefixed with "ERROR:" and
@@ -367,7 +367,7 @@ printesynclist (MSTraceList *mstl, char *dccid)
   MSTraceSeg *seg = 0;
   char starttime[30];
   char endtime[30];
-  char yearday[10];
+  char yearday[30];
   time_t now;
   struct tm *nt;
 
@@ -384,7 +384,9 @@ printesynclist (MSTraceList *mstl, char *dccid)
 
   /* Generate current time stamp */
   now = time (NULL);
-  nt = localtime ( &now ); nt->tm_year += 1900; nt->tm_yday += 1;
+  nt = localtime ( &now );
+  nt->tm_year += 1900;
+  nt->tm_yday += 1;
   snprintf ( yearday, sizeof(yearday), "%04d,%03d", nt->tm_year, nt->tm_yday);
 
   /* Print SYNC header line */
@@ -1074,7 +1076,7 @@ addlistfile (char *filename)
 static void
 usage (void)
 {
-  fprintf (stderr, "%s - Mini-SEED to Enhanced SYNC version: %s\n\n", PACKAGE, VERSION);
+  fprintf (stderr, "%s - miniSEED to Enhanced SYNC version: %s\n\n", PACKAGE, VERSION);
   fprintf (stderr, "Usage: %s [options] file1 [file2] [file3] ...\n\n", PACKAGE);
   fprintf (stderr,
 	   " ## General options ##\n"
@@ -1096,6 +1098,6 @@ usage (void)
 	   " -tt secs     Specify a time tolerance for continuous traces\n"
 	   " -rt diff     Specify a sample rate tolerance for continuous traces\n"
 	   "\n"
-	   " files        File(s) of Mini-SEED records, list files prefixed with '@'\n"
+	   " files        File(s) of miniSEED records, list files prefixed with '@'\n"
 	   "\n");
 }  /* End of usage() */
