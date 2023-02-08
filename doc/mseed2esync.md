@@ -1,4 +1,4 @@
-# <p >Create an Enhanced SYNC Listing from Mini-SEED file(s)</p>
+# <p >Create an Enhanced SYNC Listing from miniSEED file(s)</p>
 
 1. [Name](#)
 1. [Synopsis](#synopsis)
@@ -17,7 +17,7 @@ mseed2esync [options] file1 [file2 file3 ...]
 
 ## <a id='description'>Description</a>
 
-<p ><b>mseed2esync</b> reads Mini-SEED, optionally subsetting to specific time ranges or channels, and prints an Enhanced SYNC listing.</p>
+<p ><b>mseed2esync</b> reads miniSEED, optionally subsetting to specific time ranges or channels, and prints an Enhanced SYNC listing.</p>
 
 <p >An Enhanced SYNC Listing includes the SEED quality indicator and an MD5 hash of the sample values.  The MD5 hash of the sample values allows time series segments to be compared without directly comparing the sample values.</p>
 
@@ -49,7 +49,7 @@ mseed2esync [options] file1 [file2 file3 ...]
 
 <b>-r </b><i>reclen</i>
 
-<p style="padding-left: 30px;">Specify the input record length in bytes.  By default the record length of each input Mini-SEED record is automatically detected, this option forces the record length.</p>
+<p style="padding-left: 30px;">Specify the input record length in bytes.  By default the record length of each input miniSEED record is automatically detected, this option forces the  record length.</p>
 
 <b>-e </b><i>encoding</i>
 
@@ -65,19 +65,19 @@ mseed2esync [options] file1 [file2 file3 ...]
 
 <b>-ts </b><i>time</i>
 
-<p style="padding-left: 30px;">Limit processing to Mini-SEED records that contain or start after <i>time</i>.  The format of the <i>time</i> arguement is: 'YYYY[,DDD,HH,MM,SS,FFFFFF]' where valid delimiters are either commas (,), colons (:) or periods (.).</p>
+<p style="padding-left: 30px;">Limit processing to miniSEED records that contain or start after <i>time</i>.  The format of the <i>time</i> arguement is: 'YYYY[,DDD,HH,MM,SS,FFFFFF]' where valid delimiters are either commas (,), colons (:) or periods (.).</p>
 
 <b>-te </b><i>time</i>
 
-<p style="padding-left: 30px;">Limit processing to Mini-SEED records that contain or end before <i>time</i>.  The format of the <i>time</i> arguement is: 'YYYY[,DDD,HH,MM,SS,FFFFFF]' where valid delimiters are either commas (,), colons (:) or periods (.).</p>
+<p style="padding-left: 30px;">Limit processing to miniSEED records that contain or end before <i>time</i>.  The format of the <i>time</i> arguement is: 'YYYY[,DDD,HH,MM,SS,FFFFFF]' where valid delimiters are either commas (,), colons (:) or periods (.).</p>
 
 <b>-M </b><i>match</i>
 
-<p style="padding-left: 30px;">Limit processing to Mini-SEED records that match the <i>match</i> regular expression.  For each input record a source name string composed of 'NET_STA_LOC_CHAN_QUAL' is created and compared to the regular expression.  If the match expression begins with an '@' character it is assumed to indicate a file containing a list of expressions to match, see the \fBMATCH OR REJECT LIST FILE\fR section below.</p>
+<p style="padding-left: 30px;">Limit processing to miniSEED records that match the <i>match</i> regular expression.  For each input record a source name string composed of 'NET_STA_LOC_CHAN_QUAL' is created and compared to the regular expression.  If the match expression begins with an '@' character it is assumed to indicate a file containing a list of expressions to match, see the \fBMATCH OR REJECT LIST FILE\fR section below.</p>
 
 <b>-R </b><i>reject</i>
 
-<p style="padding-left: 30px;">Limit processing to Mini-SEED records that do not match the <i>reject</i> regular expression.  For each input record a source name string composed of 'NET_STA_LOC_CHAN_QUAL' is created and compared to the regular expression.  If the reject expression begins with an '@' character it is assumed to indicate a file containing a list of expressions to reject, see the \fBMATCH OR REJECT LIST FILE\fR section below.</p>
+<p style="padding-left: 30px;">Limit processing to miniSEED records that do not match the <i>reject</i> regular expression.  For each input record a source name string composed of 'NET_STA_LOC_CHAN_QUAL' is created and compared to the regular expression.  If the reject expression begins with an '@' character it is assumed to indicate a file containing a list of expressions to reject, see the \fBMATCH OR REJECT LIST FILE\fR section below.</p>
 
 <b>-tt </b><i>secs</i>
 
@@ -127,7 +127,7 @@ II_BFO_00_BHZ_Q
 
 <pre >
 Chad Trabant
-IRIS Data Management Center
+EarthScope Data Services
 </pre>
 
 

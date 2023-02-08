@@ -8,9 +8,7 @@
  * the return code will be 1.  On successfull operation the return
  * code will be 0.
  *
- * Written by Chad Trabant, IRIS Data Management Center.
- *
- * modified 2012.118
+ * Written by Chad Trabant, EarthScope Data Services.
  ***************************************************************************/
 
 #include <stdio.h>
@@ -36,7 +34,7 @@ static int addfile (char *filename);
 static int addlistfile (char *filename);
 static void usage (void);
 
-#define VERSION "0.3"
+#define VERSION "0.4"
 #define PACKAGE "mseed2esync"
 
 static int     retval       = 0;
