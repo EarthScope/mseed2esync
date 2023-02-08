@@ -1,5 +1,7 @@
-2023.038:
+2023.038: 0.4
 	- Update libmseed to 2.19.8.
+	- Add Markdown documentation.
+	- Fix compiler warnings.
 
 2013.274: 0.3
 	- Update libmseed to 2.12 release.
