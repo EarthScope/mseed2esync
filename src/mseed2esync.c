@@ -11,12 +11,12 @@
  * Written by Chad Trabant, EarthScope Data Services.
  ***************************************************************************/
 
+#include <ctype.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <errno.h>
-#include <ctype.h>
 
 #include <libmseed.h>
 
@@ -35,51 +35,51 @@ static void usage (void);
 #define VERSION "0.9"
 #define PACKAGE "mseed2esync"
 
-static int     retval       = 0;
-static flag    verbose      = 0;
-static flag    compare      = 0;
-static flag    splitversion = 1;    /* Controls consideration of publication version */
-static flag    dataflag     = 1;    /* Controls decompression of data and production of MD5 */
-static char   *dccidstr     = 0;
-static nstime_t starttime   = NSTUNSET;  /* Limit to records containing or after starttime */
-static nstime_t endtime     = NSTUNSET;  /* Limit to records containing or before endtime */
-static char *match          = 0;    /* Glob match pattern */
-static char *reject         = 0;    /* Glob reject pattern */
+static int retval         = 0;
+static flag verbose       = 0;
+static flag compare       = 0;
+static flag splitversion  = 1; /* Controls consideration of publication version */
+static flag dataflag      = 1; /* Controls decompression of data and production of MD5 */
+static char *dccidstr     = 0;
+static nstime_t starttime = NSTUNSET; /* Limit to records containing or after starttime */
+static nstime_t endtime   = NSTUNSET; /* Limit to records containing or before endtime */
+static char *match        = 0; /* Glob match pattern */
+static char *reject       = 0; /* Glob reject pattern */
 
-static double timetol; /* Time tolerance for continuous traces */
+static double timetol;     /* Time tolerance for continuous traces */
 static double sampratetol; /* Sample rate tolerance for continuous traces */
-static MS3Tolerance tolerance = { .time = NULL, .samprate = NULL };
+static MS3Tolerance tolerance = {.time = NULL, .samprate = NULL};
 double timetol_callback (const MS3Record *msr) { return timetol; }
 double samprate_callback (const MS3Record *msr) { return sampratetol; }
 
-struct filelink {
+struct filelink
+{
   char *filename;
   struct filelink *next;
 };
 
-struct filelink *filelist = 0;
+struct filelink *filelist     = 0;
 struct filelink *filelisttail = 0;
-
 
 int
 main (int argc, char **argv)
 {
   struct filelink *flp;
-  MS3Record *msr = 0;
+  MS3Record *msr     = 0;
   MS3TraceList *mstl = 0;
-  int retcode = MS_NOERROR;
-  uint32_t flags = 0;
+  int retcode        = MS_NOERROR;
+  uint32_t flags     = 0;
   char stime[30];
 
   /* Set default error message prefix */
   ms_loginit (NULL, NULL, NULL, "ERROR: ");
 
   /* Process given parameters (command line and parameter file) */
-  if ( processparam (argc, argv) < 0 )
+  if (processparam (argc, argv) < 0)
     return 1;
 
   if (dataflag)
-	flags |= MSF_UNPACKDATA;
+    flags |= MSF_UNPACKDATA;
 
   flags |= MSF_PNAMERANGE;
 
@@ -87,39 +87,39 @@ main (int argc, char **argv)
 
   flp = filelist;
 
-  while ( flp != 0 )
+  while (flp)
+  {
+    /* Loop over the input file */
+    while ((retcode = ms3_readmsr (&msr, flp->filename, flags, verbose)) == MS_NOERROR)
     {
-      /* Loop over the input file */
-      while ((retcode = ms3_readmsr (&msr, flp->filename, flags, verbose)) == MS_NOERROR )
-	{
-	  /* Check if record matches start/end time criteria */
-	  if ( starttime != NSTUNSET || endtime != NSTUNSET )
-	    {
-	      nstime_t recendtime = msr3_endtime (msr);
+      /* Check if record matches start/end time criteria */
+      if (starttime != NSTUNSET || endtime != NSTUNSET)
+      {
+        nstime_t recendtime = msr3_endtime (msr);
 
-	      if ( starttime != NSTUNSET && (msr->starttime < starttime && ! (msr->starttime <= starttime && recendtime >= starttime)) )
-		{
-		  if ( verbose >= 3 )
-		    {
-		      ms_nstime2timestr (msr->starttime, stime, SEEDORDINAL, NANO_MICRO);
-		      ms_log (1, "Skipping (starttime) %s, %s\n", msr->sid, stime);
-		    }
-		  continue;
-		}
+        if (starttime != NSTUNSET && (msr->starttime < starttime && !(msr->starttime <= starttime && recendtime >= starttime)))
+        {
+          if (verbose >= 3)
+          {
+            ms_nstime2timestr (msr->starttime, stime, SEEDORDINAL, NANO_MICRO);
+            ms_log (1, "Skipping (starttime) %s, %s\n", msr->sid, stime);
+          }
+          continue;
+        }
 
-	      if ( endtime != NSTUNSET && (recendtime > endtime && ! (msr->starttime <= endtime && recendtime >= endtime)) )
-		{
-		  if ( verbose >= 3 )
-		    {
-		      ms_nstime2timestr (msr->starttime, stime, SEEDORDINAL, NANO_MICRO);
-		      ms_log (1, "Skipping (starttime) %s, %s\n", msr->sid, stime);
-		    }
-		  continue;
-		}
-	    }
+        if (endtime != NSTUNSET && (recendtime > endtime && !(msr->starttime <= endtime && recendtime >= endtime)))
+        {
+          if (verbose >= 3)
+          {
+            ms_nstime2timestr (msr->starttime, stime, SEEDORDINAL, NANO_MICRO);
+            ms_log (1, "Skipping (starttime) %s, %s\n", msr->sid, stime);
+          }
+          continue;
+        }
+      }
 
-	  if ( match || reject )
-	    {
+      if (match || reject)
+      {
         /* Check if record is matched by the match pattern */
         if (match)
         {
@@ -147,42 +147,41 @@ main (int argc, char **argv)
             continue;
           }
         }
-	    }
+      }
 
-	  /* Add to TraceList */
-	  mstl3_addmsr (mstl, msr, splitversion, flags, 1, &tolerance);
-	}
+      /* Add to TraceList */
+      mstl3_addmsr (mstl, msr, splitversion, flags, 1, &tolerance);
+    }
 
-      /* Print error if not EOF */
-      if ( retcode != MS_ENDOFFILE )
-	{
-	  ms_log (2, "Cannot read %s: %s\n", flp->filename, ms_errorstr(retcode));
-	  ms3_readmsr (&msr, NULL, 0, 0);
-	  exit (1);
-	}
-
-      /* Make sure everything is cleaned up */
+    /* Print error if not EOF */
+    if (retcode != MS_ENDOFFILE)
+    {
+      ms_log (2, "Cannot read %s: %s\n", flp->filename, ms_errorstr (retcode));
       ms3_readmsr (&msr, NULL, 0, 0);
+      exit (1);
+    }
 
-      flp = flp->next;
-    } /* End of looping over file list */
+    /* Make sure everything is cleaned up */
+    ms3_readmsr (&msr, NULL, 0, 0);
+
+    flp = flp->next;
+  } /* End of looping over file list */
 
   /* Trim each segment to specified time range */
-  if ( starttime != NSTUNSET || endtime != NSTUNSET )
+  if (starttime != NSTUNSET || endtime != NSTUNSET)
     trimsegments (mstl);
 
   /* Print the ESYNC listing */
   printesynclist (mstl, dccidstr);
 
-  if ( compare )
+  if (compare)
     comparetraces (mstl);
 
-  if ( mstl )
+  if (mstl)
     mstl3_free (&mstl, 0);
 
   return retval;
-}  /* End of main() */
-
+} /* End of main() */
 
 /***************************************************************************
  * trimsegments():
@@ -200,7 +199,7 @@ main (int argc, char **argv)
 static void
 trimsegments (MS3TraceList *mstl)
 {
-  MS3TraceID *id = 0;
+  MS3TraceID *id   = 0;
   MS3TraceSeg *seg = 0;
 
   nstime_t sampletime;
@@ -210,114 +209,111 @@ trimsegments (MS3TraceList *mstl)
   int samplesize;
   void *datasamples;
 
-  if ( ! mstl )
-    {
-      return;
-    }
+  if (!mstl)
+    return;
 
   /* Loop through trace list */
   id = mstl->traces.next[0];
-  while ( id )
+  while (id)
+  {
+    /* Loop through segment list */
+    seg = id->first;
+    while (seg)
     {
-      /* Loop through segment list */
-      seg = id->first;
-      while ( seg )
-	{
-	  /* Skip segments that do not have integer, float or double types */
-	  if ( seg->sampletype != 'i' && seg->sampletype != 'f' && seg->sampletype != 'd' )
-	    {
-	      seg = seg->next;
-	      continue;
-	    }
+      /* Skip segments that do not have integer, float or double types */
+      if (seg->sampletype != 'i' && seg->sampletype != 'f' && seg->sampletype != 'd')
+      {
+        seg = seg->next;
+        continue;
+      }
 
-	  /* Calculate high-precision sample period */
-	  nsdelta = (nstime_t) (( seg->samprate ) ? (NSTMODULUS / seg->samprate) : 0.0);
+      /* Calculate high-precision sample period */
+      nsdelta = (nstime_t)((seg->samprate) ? (NSTMODULUS / seg->samprate) : 0.0);
 
-	  /* Calculate high-precision time tolerance */
-	  if ( timetol == -1.0 )
-	    nstimetol = (nstime_t) (0.5 * nsdelta);   /* Default time tolerance is 1/2 sample period */
-	  else if ( timetol >= 0.0 )
-	    nstimetol = (nstime_t) (timetol * NSTMODULUS);
+      /* Calculate high-precision time tolerance */
+      if (timetol == -1.0)
+        nstimetol = (nstime_t)(0.5 * nsdelta); /* Default time tolerance is 1/2 sample period */
+      else if (timetol >= 0.0)
+        nstimetol = (nstime_t)(timetol * NSTMODULUS);
 
-	  samplesize = ms_samplesize (seg->sampletype);
+      samplesize = ms_samplesize (seg->sampletype);
 
-	  /* Trim samples from beginning of segment if earlier than starttime */
-	  if ( starttime != NSTUNSET && seg->starttime < starttime )
-	    {
-	      trimcount = 0;
-	      sampletime = seg->starttime;
-	      while ( sampletime < (starttime - nstimetol) )
-		{
-		  sampletime += nsdelta;
-		  trimcount++;
-		}
+      /* Trim samples from beginning of segment if earlier than starttime */
+      if (starttime != NSTUNSET && seg->starttime < starttime)
+      {
+        trimcount  = 0;
+        sampletime = seg->starttime;
+        while (sampletime < (starttime - nstimetol))
+        {
+          sampletime += nsdelta;
+          trimcount++;
+        }
 
-	      if ( trimcount > 0 && trimcount < seg->numsamples )
-		{
-		  if ( verbose )
-		    ms_log (1, "Trimming %lld samples from beginning of trace for %s\n",
-			    (long long)trimcount, id->sid);
+        if (trimcount > 0 && trimcount < seg->numsamples)
+        {
+          if (verbose)
+            ms_log (1, "Trimming %lld samples from beginning of trace for %s\n",
+                    (long long)trimcount, id->sid);
 
-		  memmove (seg->datasamples,
-			   (char *)seg->datasamples + (trimcount * samplesize),
-			   (seg->numsamples - trimcount) * samplesize);
+          memmove (seg->datasamples,
+                   (char *)seg->datasamples + (trimcount * samplesize),
+                   (seg->numsamples - trimcount) * samplesize);
 
-		  datasamples = realloc (seg->datasamples, (seg->numsamples - trimcount) * samplesize);
+          datasamples = realloc (seg->datasamples, (seg->numsamples - trimcount) * samplesize);
 
-		  if ( ! datasamples )
-		    {
-		      ms_log (2, "Cannot reallocate sample buffer\n");
-		      return;
-		    }
+          if (!datasamples)
+          {
+            ms_log (2, "Cannot reallocate sample buffer\n");
+            return;
+          }
 
-		  seg->datasamples = datasamples;
-		  seg->starttime += MS_EPOCH2NSTIME((trimcount / seg->samprate));
-		  seg->numsamples -= trimcount;
-		  seg->samplecnt -= trimcount;
-		}
-	    }
+          seg->datasamples = datasamples;
+          seg->starttime += MS_EPOCH2NSTIME ((trimcount / seg->samprate));
+          seg->numsamples -= trimcount;
+          seg->samplecnt -= trimcount;
+        }
+      }
 
-	  /* Trim samples from end of segment if later than endtime */
-	  if ( endtime != NSTUNSET && seg->endtime > endtime )
-	    {
-	      trimcount = 0;
-	      sampletime = seg->endtime;
-	      while ( sampletime > (endtime + nstimetol) )
-		{
-		  sampletime -= nsdelta;
-		  trimcount++;
-		}
+      /* Trim samples from end of segment if later than endtime */
+      if (endtime != NSTUNSET && seg->endtime > endtime)
+      {
+        trimcount  = 0;
+        sampletime = seg->endtime;
+        while (sampletime > (endtime + nstimetol))
+        {
+          sampletime -= nsdelta;
+          trimcount++;
+        }
 
-	      if ( trimcount > 0 && trimcount < seg->numsamples )
-		{
-		  if ( verbose )
-		    ms_log (1, "Trimming %lld samples from end of trace for %s\n",
-			    (long long)trimcount, id->sid);
+        if (trimcount > 0 && trimcount < seg->numsamples)
+        {
+          if (verbose)
+            ms_log (1, "Trimming %lld samples from end of trace for %s\n",
+                    (long long)trimcount, id->sid);
 
-		  datasamples = realloc (seg->datasamples, (seg->numsamples - trimcount) * samplesize);
+          datasamples = realloc (seg->datasamples, (seg->numsamples - trimcount) * samplesize);
 
-		  if ( ! datasamples )
-		    {
-		      ms_log (2, "Cannot reallocate sample buffer\n");
-		      return;
-		    }
+          if (!datasamples)
+          {
+            ms_log (2, "Cannot reallocate sample buffer\n");
+            return;
+          }
 
-		  seg->datasamples = datasamples;
-		  seg->endtime -= MS_EPOCH2NSTIME((trimcount / seg->samprate));
-		  seg->numsamples -= trimcount;
-		  seg->samplecnt -= trimcount;
-		}
-	    }
+          seg->datasamples = datasamples;
+          seg->endtime -= MS_EPOCH2NSTIME ((trimcount / seg->samprate));
+          seg->numsamples -= trimcount;
+          seg->samplecnt -= trimcount;
+        }
+      }
 
-	  seg = seg->next;
-	}
-
-      id = id->next[0];
+      seg = seg->next;
     }
 
-  return;
-}  /* End of trimsegments() */
+    id = id->next[0];
+  }
 
+  return;
+} /* End of trimsegments() */
 
 /***************************************************************************
  * printesynclist():
@@ -329,7 +325,7 @@ trimsegments (MS3TraceList *mstl)
 static void
 printesynclist (MS3TraceList *mstl, char *dccid)
 {
-  MS3TraceID *id = 0;
+  MS3TraceID *id   = 0;
   MS3TraceSeg *seg = 0;
   char starttime[30];
   char endtime[30];
@@ -348,89 +344,86 @@ printesynclist (MS3TraceList *mstl, char *dccid)
   int idx;
   char digeststr[33];
 
-  if ( ! mstl )
-    {
-      return;
-    }
+  if (!mstl)
+    return;
 
   /* Generate current time stamp */
   now = time (NULL);
-  nt = localtime ( &now );
+  nt  = localtime (&now);
   nt->tm_year += 1900;
   nt->tm_yday += 1;
-  snprintf ( yearday, sizeof(yearday), "%04d,%03d", nt->tm_year, nt->tm_yday);
+  snprintf (yearday, sizeof (yearday), "%04d,%03d", nt->tm_year, nt->tm_yday);
 
   /* Print SYNC header line */
-  ms_log (0, "%s|%s\n", (dccid)?dccid:"DCC", yearday);
+  ms_log (0, "%s|%s\n", (dccid) ? dccid : "DCC", yearday);
 
   /* Loop through trace list */
   id = mstl->traces.next[0];
-  while ( id )
+  while (id)
+  {
+    /* Split SID into network, station, location and channel */
+    ms_sid2nslc (id->sid, network, station, location, channel);
+
+    /* Loop through segment list */
+    seg = id->first;
+    while (seg)
     {
-	  /* Split SID into network, station, location and channel */
-	  ms_sid2nslc (id->sid, network, station, location, channel);
+      ms_nstime2timestr (seg->starttime, starttime, SEEDORDINAL, NANO_MICRO);
+      ms_nstime2timestr (seg->endtime, endtime, SEEDORDINAL, NANO_MICRO);
 
-      /* Loop through segment list */
-      seg = id->first;
-      while ( seg )
-	{
-	  ms_nstime2timestr (seg->starttime, starttime, SEEDORDINAL, NANO_MICRO);
-	  ms_nstime2timestr (seg->endtime, endtime, SEEDORDINAL, NANO_MICRO);
+      /* Calculate MD5 hash of sample values if samples present */
+      if (seg->datasamples)
+      {
+        samplesize = ms_samplesize (seg->sampletype);
+        memset (&pms, 0, sizeof (md5_state_t));
+        md5_init (&pms);
+        md5_append (&pms, (const md5_byte_t *)seg->datasamples, (seg->numsamples * samplesize));
+        md5_finish (&pms, digest);
 
-	  /* Calculate MD5 hash of sample values if samples present */
-	  if ( seg->datasamples )
-	    {
-	      samplesize = ms_samplesize ( seg->sampletype );
-	      memset (&pms, 0, sizeof(md5_state_t));
-	      md5_init(&pms);
-	      md5_append(&pms, (const md5_byte_t *)seg->datasamples, (seg->numsamples * samplesize));
-	      md5_finish(&pms, digest);
+        for (idx = 0; idx < 16; idx++)
+          sprintf (digeststr + (idx * 2), "%02x", digest[idx]);
+      }
 
-	      for (idx=0; idx < 16; idx++)
-		sprintf (digeststr+(idx*2), "%02x", digest[idx]);
-	    }
-
-	  /* Set quality flag, mapping to legacy codes for backwards compatibility */
-	  switch (id->pubversion)
-	  {
-	  case 1:
-	    quality[0] = 'D';
-		quality[1] = 0;
-	    break;
-	  case 2:
-	    quality[0] = 'R';
-		quality[1] = 0;
-	    break;
-	  case 3:
-	    quality[0] = 'Q';
-		quality[1] = 0;
-	    break;
+      /* Set quality flag, mapping to legacy codes for backwards compatibility */
+      switch (id->pubversion)
+      {
+      case 1:
+        quality[0] = 'D';
+        quality[1] = 0;
+        break;
+      case 2:
+        quality[0] = 'R';
+        quality[1] = 0;
+        break;
+      case 3:
+        quality[0] = 'Q';
+        quality[1] = 0;
+        break;
       case 4:
-	    quality[0] = 'M';
-		quality[1] = 0;
-		break;
-	  default:
-	  	snprintf (quality, sizeof(quality), "%d", id->pubversion);
-	    break;
-	  }
+        quality[0] = 'M';
+        quality[1] = 0;
+        break;
+      default:
+        snprintf (quality, sizeof (quality), "%d", id->pubversion);
+        break;
+      }
 
-	  /* Print SYNC line */
-	  ms_log (0, "%s|%s|%s|%s|%s|%s||%.10g|%lld|||%s|%.32s|||%s\n",
-		  network, station, location, channel,
-		  starttime, endtime, seg->samprate, (long long int)seg->samplecnt,
-		  (id->pubversion) ? quality : "",
-		  (seg->datasamples) ? digeststr : "",
-		  yearday);
+      /* Print SYNC line */
+      ms_log (0, "%s|%s|%s|%s|%s|%s||%.10g|%lld|||%s|%.32s|||%s\n",
+              network, station, location, channel,
+              starttime, endtime, seg->samprate, (long long int)seg->samplecnt,
+              (id->pubversion) ? quality : "",
+              (seg->datasamples) ? digeststr : "",
+              yearday);
 
-	  seg = seg->next;
-	}
-
-      id = id->next[0];
+      seg = seg->next;
     }
 
-  return;
-}  /* End of printesynclist() */
+    id = id->next[0];
+  }
 
+  return;
+} /* End of printesynclist() */
 
 /***************************************************************************
  * comparetraces():
@@ -442,9 +435,9 @@ printesynclist (MS3TraceList *mstl, char *dccid)
 static void
 comparetraces (MS3TraceList *mstl)
 {
-  MS3TraceID *id = 0;
-  MS3TraceID *tid = 0;
-  MS3TraceSeg *seg = 0;
+  MS3TraceID *id    = 0;
+  MS3TraceID *tid   = 0;
+  MS3TraceSeg *seg  = 0;
   MS3TraceSeg *tseg = 0;
   char start[30];
   char end[30];
@@ -452,144 +445,141 @@ comparetraces (MS3TraceList *mstl)
   char tend[30];
   int64_t idx = 0;
 
-  if ( ! mstl )
-    {
-      return;
-    }
+  if (!mstl)
+    return;
 
   /* Loop through trace list */
   id = mstl->traces.next[0];
-  while ( id )
+  while (id)
+  {
+    /* Loop through segment list */
+    seg = id->first;
+    while (seg)
     {
-      /* Loop through segment list */
-      seg = id->first;
-      while ( seg )
-	{
-	  ms_nstime2timestr (seg->starttime, start, SEEDORDINAL, NANO_MICRO);
-	  ms_nstime2timestr (seg->endtime, end, SEEDORDINAL, NANO_MICRO);
+      ms_nstime2timestr (seg->starttime, start, SEEDORDINAL, NANO_MICRO);
+      ms_nstime2timestr (seg->endtime, end, SEEDORDINAL, NANO_MICRO);
 
-	  if ( ! seg->datasamples )
-	    {
-	      ms_log (2, "%s, %s, %s :: No data samples\n", id->sid, start, end);
-	      seg = seg->next;
-	      continue;
-	    }
+      if (!seg->datasamples)
+      {
+        ms_log (2, "%s, %s, %s :: No data samples\n", id->sid, start, end);
+        seg = seg->next;
+        continue;
+      }
 
-	  /* Loop through trace list for targets */
-	  tid = id;
-	  while ( tid )
-	    {
-	      /* Loop through target segment list */
-	      tseg = ( tid == id ) ? seg->next : tid->first;
-	      while ( tseg )
-		{
-		  if ( ! tseg->datasamples )
-		    {
-		      ms_log (1, "%s, %s, %s :: No data samples\n", tid->sid, tstart, tend);
-		      tseg = tseg->next;
-		      continue;
-		    }
+      /* Loop through trace list for targets */
+      tid = id;
+      while (tid)
+      {
+        /* Loop through target segment list */
+        tseg = (tid == id) ? seg->next : tid->first;
+        while (tseg)
+        {
+          if (!tseg->datasamples)
+          {
+            ms_log (1, "%s, %s, %s :: No data samples\n", tid->sid, tstart, tend);
+            tseg = tseg->next;
+            continue;
+          }
 
-		  ms_nstime2timestr (tseg->starttime, tstart, SEEDORDINAL, NANO_MICRO);
-		  ms_nstime2timestr (tseg->endtime, tend, SEEDORDINAL, NANO_MICRO);
+          ms_nstime2timestr (tseg->starttime, tstart, SEEDORDINAL, NANO_MICRO);
+          ms_nstime2timestr (tseg->endtime, tend, SEEDORDINAL, NANO_MICRO);
 
-		  if ( seg->sampletype != tseg->sampletype )
-		    {
-		      ms_log (1, "%s and %s :: Sample type mismatch\n", id->sid, tid->sid);
-		      tseg = tseg->next;
-		      continue;
-		    }
+          if (seg->sampletype != tseg->sampletype)
+          {
+            ms_log (1, "%s and %s :: Sample type mismatch\n", id->sid, tid->sid);
+            tseg = tseg->next;
+            continue;
+          }
 
-		  if ( seg->numsamples != tseg->numsamples )
-		    {
-		      ms_log (1, "%s (%lld) and %s (%lld) :: Sample count mismatch\n",
-			      id->sid, (long long int) seg->numsamples,
-			      tid->sid, (long long int) tseg->numsamples);
-		      tseg = tseg->next;
-		      continue;
-		    }
+          if (seg->numsamples != tseg->numsamples)
+          {
+            ms_log (1, "%s (%lld) and %s (%lld) :: Sample count mismatch\n",
+                    id->sid, (long long int)seg->numsamples,
+                    tid->sid, (long long int)tseg->numsamples);
+            tseg = tseg->next;
+            continue;
+          }
 
-		  if ( seg->sampletype == 'i' )
-		    {
-		      int32_t *data = (int32_t*) seg->datasamples;
-		      int32_t *tdata = (int32_t*) tseg->datasamples;
+          if (seg->sampletype == 'i')
+          {
+            int32_t *data  = (int32_t *)seg->datasamples;
+            int32_t *tdata = (int32_t *)tseg->datasamples;
 
-		      for (idx=0; idx < seg->numsamples; idx++)
-			if ( data[idx] != tdata[idx] )
-			  {
-			    ms_log (0, "Time series are NOT the same, differing at sample %lld (%d versus %d)\n",
-				    (long long int)idx+1, data[idx], tdata[idx]);
-			    retval = 1;
-			    break;
-			  }
-		    }
-		  else if ( seg->sampletype == 'f' )
-		    {
-		      float *data = (float*) seg->datasamples;
-		      float *tdata = (float*) tseg->datasamples;
+            for (idx = 0; idx < seg->numsamples; idx++)
+              if (data[idx] != tdata[idx])
+              {
+                ms_log (0, "Time series are NOT the same, differing at sample %lld (%d versus %d)\n",
+                        (long long int)idx + 1, data[idx], tdata[idx]);
+                retval = 1;
+                break;
+              }
+          }
+          else if (seg->sampletype == 'f')
+          {
+            float *data  = (float *)seg->datasamples;
+            float *tdata = (float *)tseg->datasamples;
 
-		      for (idx=0; idx < seg->numsamples; idx++)
-			if ( data[idx] != tdata[idx] )
-			  {
-			    ms_log (0, "Time series are NOT the same, differing at sample %lld (%f versus %f)\n",
-				    (long long int)idx+1, data[idx], tdata[idx]);
-			    retval = 1;
-			    break;
-			  }
-		    }
-		  else if ( seg->sampletype == 'd' )
-		    {
-		      double *data = (double*) seg->datasamples;
-		      double *tdata = (double*) tseg->datasamples;
+            for (idx = 0; idx < seg->numsamples; idx++)
+              if (data[idx] != tdata[idx])
+              {
+                ms_log (0, "Time series are NOT the same, differing at sample %lld (%f versus %f)\n",
+                        (long long int)idx + 1, data[idx], tdata[idx]);
+                retval = 1;
+                break;
+              }
+          }
+          else if (seg->sampletype == 'd')
+          {
+            double *data  = (double *)seg->datasamples;
+            double *tdata = (double *)tseg->datasamples;
 
-		      for (idx=0; idx < seg->numsamples; idx++)
-			if ( data[idx] != tdata[idx] )
-			  {
-			    ms_log (0, "Time series are NOT the same, differing at sample %lld (%f versus %f)\n",
-				    (long long int)idx+1, data[idx], tdata[idx]);
-			    retval = 1;
-			    break;
-			  }
-		    }
-		  else if ( seg->sampletype == 'a' )
-		    {
-		      char *data = (char*) seg->datasamples;
-		      char *tdata = (char*) tseg->datasamples;
+            for (idx = 0; idx < seg->numsamples; idx++)
+              if (data[idx] != tdata[idx])
+              {
+                ms_log (0, "Time series are NOT the same, differing at sample %lld (%f versus %f)\n",
+                        (long long int)idx + 1, data[idx], tdata[idx]);
+                retval = 1;
+                break;
+              }
+          }
+          else if (seg->sampletype == 'a')
+          {
+            char *data  = (char *)seg->datasamples;
+            char *tdata = (char *)tseg->datasamples;
 
-		      for (idx=0; idx < seg->numsamples; idx++)
-			if ( data[idx] != tdata[idx] )
-			  {
-			    ms_log (0, "Time series are NOT the same, differing at sample %lld (%c versus %c)\n",
-				    (long long int)idx+1, data[idx], tdata[idx]);
-			    retval = 1;
-			    break;
-			  }
-		    }
+            for (idx = 0; idx < seg->numsamples; idx++)
+              if (data[idx] != tdata[idx])
+              {
+                ms_log (0, "Time series are NOT the same, differing at sample %lld (%c versus %c)\n",
+                        (long long int)idx + 1, data[idx], tdata[idx]);
+                retval = 1;
+                break;
+              }
+          }
 
-		  if ( idx == seg->numsamples )
-		    {
-		      ms_log (0, "Time series are the same, %lld samples compared\n",
-			      (long long int)idx);
-		    }
+          if (idx == seg->numsamples)
+          {
+            ms_log (0, "Time series are the same, %lld samples compared\n",
+                    (long long int)idx);
+          }
 
-		  ms_log (0, "  %s  %s  %s\n", id->sid, start, end);
-		  ms_log (0, "  %s  %s  %s\n", tid->sid, tstart, tend);
+          ms_log (0, "  %s  %s  %s\n", id->sid, start, end);
+          ms_log (0, "  %s  %s  %s\n", tid->sid, tstart, tend);
 
-		  tseg = tseg->next;
-		}
+          tseg = tseg->next;
+        }
 
-	      tid = tid->next[0];
-	    }
+        tid = tid->next[0];
+      }
 
-	  seg = seg->next;
-	}
-
-      id = id->next[0];
+      seg = seg->next;
     }
 
-  return;
-}  /* End of comparetraces() */
+    id = id->next[0];
+  }
 
+  return;
+} /* End of comparetraces() */
 
 /***************************************************************************
  * parameter_proc():
@@ -601,105 +591,105 @@ static int
 processparam (int argcount, char **argvec)
 {
   int optind;
-  char *match_pattern = 0;
+  char *match_pattern  = 0;
   char *reject_pattern = 0;
   char *tptr;
 
   /* Process all command line arguments */
   for (optind = 1; optind < argcount; optind++)
+  {
+    if (strcmp (argvec[optind], "-V") == 0)
     {
-      if (strcmp (argvec[optind], "-V") == 0)
-	{
-	  ms_log (1, "%s version: %s\n", PACKAGE, VERSION);
-	  exit (0);
-	}
-      else if (strcmp (argvec[optind], "-h") == 0)
-	{
-	  usage();
-	  exit (0);
-	}
-      else if (strncmp (argvec[optind], "-v", 2) == 0)
-	{
-	  verbose += strspn (&argvec[optind][1], "v");
-	}
-      else if (strcmp (argvec[optind], "-D") == 0)
-	{
-	  dccidstr = getoptval(argcount, argvec, optind++);
-	}
-      else if (strcmp (argvec[optind], "-C") == 0)
-	{
-	  compare = 1;
-	}
-      else if (strcmp (argvec[optind], "-ts") == 0)
-	{
-	  starttime = ms_timestr2nstime (getoptval(argcount, argvec, optind++));
-	  if ( starttime == NSTUNSET )
-	    return -1;
-	}
-      else if (strcmp (argvec[optind], "-te") == 0)
-	{
-	  endtime = ms_timestr2nstime (getoptval(argcount, argvec, optind++));
-	  if ( endtime == NSTUNSET )
-	    return -1;
-	}
-      else if (strcmp (argvec[optind], "-m") == 0)
-	{
-	  match_pattern = strdup (getoptval(argcount, argvec, optind++));
-	}
-      else if (strcmp (argvec[optind], "-r") == 0)
-	{
-	  reject_pattern = strdup (getoptval(argcount, argvec, optind++));
-	}
-      else if (strcmp (argvec[optind], "-tt") == 0)
-	{
-      timetol = strtod (getoptval (argcount, argvec, optind++), NULL);
-      tolerance.time = timetol_callback;
-	}
-      else if (strcmp (argvec[optind], "-rt") == 0)
-	{
-      sampratetol = strtod (getoptval (argcount, argvec, optind++), NULL);
-      tolerance.samprate = samprate_callback;
-	}
-      else if (strncmp (argvec[optind], "-", 1) == 0 &&
-	       strlen (argvec[optind]) > 1 )
-	{
-	  ms_log (2, "Unknown option: %s\n", argvec[optind]);
-	  exit (1);
-	}
-      else
-	{
-	  tptr = argvec[optind];
-
-          /* Check for an input file list */
-          if ( tptr[0] == '@' )
-            {
-              if ( addlistfile (tptr+1) < 0 )
-                {
-                  ms_log (2, "Error adding list file %s", tptr+1);
-                  exit (1);
-                }
-            }
-          /* Otherwise this is an input file */
-          else
-            {
-              /* Add file to global file list */
-              if ( addfile (tptr) )
-                {
-                  ms_log (2, "Error adding file to input list %s", tptr);
-                  exit (1);
-                }
-            }
-	}
+      ms_log (1, "%s version: %s\n", PACKAGE, VERSION);
+      exit (0);
     }
-
-  /* Make sure input file were specified */
-  if ( filelist == 0 )
+    else if (strcmp (argvec[optind], "-h") == 0)
     {
-      ms_log (2, "No input files were specified\n\n");
-      ms_log (1, "%s version %s\n\n", PACKAGE, VERSION);
-      ms_log (1, "Try %s -h for usage\n", PACKAGE);
+      usage ();
+      exit (0);
+    }
+    else if (strncmp (argvec[optind], "-v", 2) == 0)
+    {
+      verbose += strspn (&argvec[optind][1], "v");
+    }
+    else if (strcmp (argvec[optind], "-D") == 0)
+    {
+      dccidstr = getoptval (argcount, argvec, optind++);
+    }
+    else if (strcmp (argvec[optind], "-C") == 0)
+    {
+      compare = 1;
+    }
+    else if (strcmp (argvec[optind], "-ts") == 0)
+    {
+      starttime = ms_timestr2nstime (getoptval (argcount, argvec, optind++));
+      if (starttime == NSTUNSET)
+        return -1;
+    }
+    else if (strcmp (argvec[optind], "-te") == 0)
+    {
+      endtime = ms_timestr2nstime (getoptval (argcount, argvec, optind++));
+      if (endtime == NSTUNSET)
+        return -1;
+    }
+    else if (strcmp (argvec[optind], "-m") == 0)
+    {
+      match_pattern = strdup (getoptval (argcount, argvec, optind++));
+    }
+    else if (strcmp (argvec[optind], "-r") == 0)
+    {
+      reject_pattern = strdup (getoptval (argcount, argvec, optind++));
+    }
+    else if (strcmp (argvec[optind], "-tt") == 0)
+    {
+      timetol        = strtod (getoptval (argcount, argvec, optind++), NULL);
+      tolerance.time = timetol_callback;
+    }
+    else if (strcmp (argvec[optind], "-rt") == 0)
+    {
+      sampratetol        = strtod (getoptval (argcount, argvec, optind++), NULL);
+      tolerance.samprate = samprate_callback;
+    }
+    else if (strncmp (argvec[optind], "-", 1) == 0 &&
+             strlen (argvec[optind]) > 1)
+    {
+      ms_log (2, "Unknown option: %s\n", argvec[optind]);
       exit (1);
     }
+    else
+    {
+      tptr = argvec[optind];
+
+      /* Check for an input file list */
+      if (tptr[0] == '@')
+      {
+        if (addlistfile (tptr + 1) < 0)
+        {
+          ms_log (2, "Error adding list file %s", tptr + 1);
+          exit (1);
+        }
+      }
+      /* Otherwise this is an input file */
+      else
+      {
+        /* Add file to global file list */
+        if (addfile (tptr))
+        {
+          ms_log (2, "Error adding file to input list %s", tptr);
+          exit (1);
+        }
+      }
+    }
+  }
+
+  /* Make sure input file were specified */
+  if (filelist == 0)
+  {
+    ms_log (2, "No input files were specified\n\n");
+    ms_log (1, "%s version %s\n\n", PACKAGE, VERSION);
+    ms_log (1, "Try %s -h for usage\n", PACKAGE);
+    exit (1);
+  }
 
   /* Add wildcards to match pattern for logical "contains" */
   if (match_pattern)
@@ -726,12 +716,11 @@ processparam (int argcount, char **argvec)
   }
 
   /* Report the program version */
-  if ( verbose )
+  if (verbose)
     ms_log (1, "%s version: %s\n", PACKAGE, VERSION);
 
   return 0;
-}  /* End of parameter_proc() */
-
+} /* End of parameter_proc() */
 
 /***************************************************************************
  * getoptval:
@@ -748,25 +737,25 @@ processparam (int argcount, char **argvec)
 static char *
 getoptval (int argcount, char **argvec, int argopt)
 {
-  if ( argvec == NULL || argvec[argopt] == NULL ) {
+  if (argvec == NULL || argvec[argopt] == NULL)
+  {
     ms_log (2, "getoptval(): NULL option requested\n");
     exit (1);
     return 0;
   }
 
   /* Special case of '-o -' usage */
-  if ( (argopt+1) < argcount && strcmp (argvec[argopt], "-o") == 0 )
-    if ( strcmp (argvec[argopt+1], "-") == 0 )
-      return argvec[argopt+1];
+  if ((argopt + 1) < argcount && strcmp (argvec[argopt], "-o") == 0)
+    if (strcmp (argvec[argopt + 1], "-") == 0)
+      return argvec[argopt + 1];
 
-  if ( (argopt+1) < argcount && *argvec[argopt+1] != '-' )
-    return argvec[argopt+1];
+  if ((argopt + 1) < argcount && *argvec[argopt + 1] != '-')
+    return argvec[argopt + 1];
 
   ms_log (2, "Option %s requires a value, try -h for usage\n", argvec[argopt]);
   exit (1);
   return 0;
-}  /* End of getoptval() */
-
+} /* End of getoptval() */
 
 /***************************************************************************
  * addfile:
@@ -780,43 +769,42 @@ addfile (char *filename)
 {
   struct filelink *newlp;
 
-  if ( filename == NULL )
-    {
-      ms_log (2, "addfile(): No file name specified\n");
-      return -1;
-    }
+  if (filename == NULL)
+  {
+    ms_log (2, "addfile(): No file name specified\n");
+    return -1;
+  }
 
-  newlp = (struct filelink *) calloc (1, sizeof (struct filelink));
+  newlp = (struct filelink *)calloc (1, sizeof (struct filelink));
 
-  if ( ! newlp )
-    {
-      ms_log (2, "addfile(): Cannot allocate memory\n");
-      return -1;
-    }
+  if (!newlp)
+  {
+    ms_log (2, "addfile(): Cannot allocate memory\n");
+    return -1;
+  }
 
-  newlp->filename = strdup(filename);
+  newlp->filename = strdup (filename);
 
-  if ( ! newlp->filename )
-    {
-      ms_log (2, "addfile(): Cannot duplicate string\n");
-      return -1;
-    }
+  if (!newlp->filename)
+  {
+    ms_log (2, "addfile(): Cannot duplicate string\n");
+    return -1;
+  }
 
   /* Add new file to the end of the list */
-  if ( filelisttail == 0 )
-    {
-      filelist = newlp;
-      filelisttail = newlp;
-    }
+  if (filelisttail == 0)
+  {
+    filelist     = newlp;
+    filelisttail = newlp;
+  }
   else
-    {
-      filelisttail->next = newlp;
-      filelisttail = newlp;
-    }
+  {
+    filelisttail->next = newlp;
+    filelisttail       = newlp;
+  }
 
   return 0;
-}  /* End of addfile() */
-
+} /* End of addfile() */
 
 /***************************************************************************
  * addlistfile:
@@ -832,45 +820,44 @@ addlistfile (char *filename)
   char filelistent[1024];
   int filecount = 0;
 
-  if ( verbose >= 1 )
+  if (verbose >= 1)
     ms_log (1, "Reading list file '%s'\n", filename);
 
-  if ( ! (fp = fopen(filename, "rb")) )
-    {
-      ms_log (2, "Cannot open list file %s: %s\n", filename, strerror(errno));
+  if (!(fp = fopen (filename, "rb")))
+  {
+    ms_log (2, "Cannot open list file %s: %s\n", filename, strerror (errno));
+    return -1;
+  }
+
+  while (fgets (filelistent, sizeof (filelistent), fp))
+  {
+    char *cp;
+
+    /* End string at first newline character */
+    if ((cp = strchr (filelistent, '\n')))
+      *cp = '\0';
+
+    /* Skip empty lines */
+    if (!strlen (filelistent))
+      continue;
+
+    /* Skip comment lines */
+    if (*filelistent == '#')
+      continue;
+
+    if (verbose > 1)
+      ms_log (1, "Adding '%s' from list file\n", filelistent);
+
+    if (addfile (filelistent))
       return -1;
-    }
 
-  while ( fgets (filelistent, sizeof(filelistent), fp) )
-    {
-      char *cp;
-
-      /* End string at first newline character */
-      if ( (cp = strchr(filelistent, '\n')) )
-        *cp = '\0';
-
-      /* Skip empty lines */
-      if ( ! strlen (filelistent) )
-        continue;
-
-      /* Skip comment lines */
-      if ( *filelistent == '#' )
-        continue;
-
-      if ( verbose > 1 )
-        ms_log (1, "Adding '%s' from list file\n", filelistent);
-
-      if ( addfile (filelistent) )
-        return -1;
-
-      filecount++;
-    }
+    filecount++;
+  }
 
   fclose (fp);
 
   return filecount;
-}  /* End of addlistfile() */
-
+} /* End of addlistfile() */
 
 /***********************************************************************
  * robust glob pattern matcher
@@ -1038,7 +1025,6 @@ my_globmatch (const char *string, const char *pattern)
   return !*string;
 } /* End of my_globmatch() */
 
-
 /***************************************************************************
  * usage():
  * Print the usage message.
@@ -1049,23 +1035,23 @@ usage (void)
   fprintf (stderr, "%s - miniSEED to Enhanced SYNC version: %s\n\n", PACKAGE, VERSION);
   fprintf (stderr, "Usage: %s [options] file1 [file2] [file3] ...\n\n", PACKAGE);
   fprintf (stderr,
-	   " ## General options ##\n"
-	   " -V           Report program version\n"
-	   " -h           Show this usage message\n"
-	   " -v           Be more verbose, multiple flags can be used\n"
-	   " -D DCCID     Specify the DCC identifier for SYNC header\n"
-	   " -C           Compare sample values of time series, to diagnose mismatches\n"
-	   "\n"
-	   " ## Data selection options ##\n"
-	   " -ts time     Limit to samples that start on or after time\n"
-	   " -te time     Limit to samples that end on or before time\n"
-	   "                time format: 'YYYY[,DDD,HH,MM,SS,FFFFFF]' delimiters: [,:.]\n"
-       " -m match     Limit to records containing the specified pattern\n"
-       " -r reject    Limit to records not containing the specfied pattern\n"
-       "                Patterns are applied to: 'FDSN:NET_STA_LOC_BAND_SOURCE_SS'\n"
-	   " -tt secs     Specify a time tolerance for continuous traces\n"
-	   " -rt diff     Specify a sample rate tolerance for continuous traces\n"
-	   "\n"
-	   " files        File(s) of miniSEED records, list files prefixed with '@'\n"
-	   "\n");
-}  /* End of usage() */
+           " ## General options ##\n"
+           " -V           Report program version\n"
+           " -h           Show this usage message\n"
+           " -v           Be more verbose, multiple flags can be used\n"
+           " -D DCCID     Specify the DCC identifier for SYNC header\n"
+           " -C           Compare sample values of time series, to diagnose mismatches\n"
+           "\n"
+           " ## Data selection options ##\n"
+           " -ts time     Limit to samples that start on or after time\n"
+           " -te time     Limit to samples that end on or before time\n"
+           "                time format: 'YYYY[,DDD,HH,MM,SS,FFFFFF]' delimiters: [,:.]\n"
+           " -m match     Limit to records containing the specified pattern\n"
+           " -r reject    Limit to records not containing the specfied pattern\n"
+           "                Patterns are applied to: 'FDSN:NET_STA_LOC_BAND_SOURCE_SS'\n"
+           " -tt secs     Specify a time tolerance for continuous traces\n"
+           " -rt diff     Specify a sample rate tolerance for continuous traces\n"
+           "\n"
+           " files        File(s) of miniSEED records, list files prefixed with '@'\n"
+           "\n");
+} /* End of usage() */
