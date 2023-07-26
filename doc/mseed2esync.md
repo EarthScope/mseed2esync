@@ -6,7 +6,6 @@
 1. [Options](#options)
 1. [Input Files](#input-files)
 1. [Input List File](#input-list-file)
-1. [Match Or Reject List File](#match-or-reject-list-file)
 1. [Author](#author)
 
 ## <a id='synopsis'>Synopsis</a>
@@ -23,15 +22,13 @@ mseed2esync [options] file1 [file2 file3 ...]
 
 <p >IMPORTANT: the MD5 hashing employed is dependent on the binary representation of the sample values on a given architecture.  Most architectures should generate comparable values but some may not, particularly for float type samples.</p>
 
-<p >The SEED quality code is included in the SYNC listing in the field historically used for "DCC Tape Number".</p>
+<p >The publication version, or data quality codes, is included in the SYNC listing in the field historically used for "DCC Tape Number".</p>
 
 <p >The MD5 sample value hash is included in the SYNC listing in the field historically used for "DMC Volume Number".</p>
 
 <p >If '-' is specified standard input will be read.  Multiple input files will be processed in the order specified.</p>
 
 <p >Files on the command line prefixed with a '@' character are input list files and are expected to contain a simple list of input files, see \fBINPUT LIST FILE\fR for more details.</p>
-
-<p >When a input file is full SEED including both SEED headers and data records all of the headers will be skipped.</p>
 
 ## <a id='options'>Options</a>
 
@@ -47,14 +44,6 @@ mseed2esync [options] file1 [file2 file3 ...]
 
 <p style="padding-left: 30px;">Be more verbose.  This flag can be used multiple times ("-v -v" or "-vv") for more verbosity.</p>
 
-<b>-r </b><i>reclen</i>
-
-<p style="padding-left: 30px;">Specify the input record length in bytes.  By default the record length of each input miniSEED record is automatically detected, this option forces the  record length.</p>
-
-<b>-e </b><i>encoding</i>
-
-<p style="padding-left: 30px;">Specify the data encoding format.  These encoding values are the same as those specified in the SEED 1000 Blockette.</p>
-
 <b>-D </b><i>DCCID</i>
 
 <p style="padding-left: 30px;">Specify the a data center identifier to place in the SYNC file header. If not specified it will be left empty in the header.</p>
@@ -65,19 +54,19 @@ mseed2esync [options] file1 [file2 file3 ...]
 
 <b>-ts </b><i>time</i>
 
-<p style="padding-left: 30px;">Limit processing to miniSEED records that contain or start after <i>time</i>.  The format of the <i>time</i> arguement is: 'YYYY[,DDD,HH,MM,SS,FFFFFF]' where valid delimiters are either commas (,), colons (:) or periods (.).</p>
+<p style="padding-left: 30px;">Limit processing to miniSEED records that contain or start after <i>time</i>.  The format of the <i>time</i> arguement is: 'YYYY[-MM-DDThh:mm:ss.ffff], or 'YYYY[,DDD,HH,MM,SS,FFFFFF]', or Unix/POSIX epoch seconds.</p>
 
 <b>-te </b><i>time</i>
 
-<p style="padding-left: 30px;">Limit processing to miniSEED records that contain or end before <i>time</i>.  The format of the <i>time</i> arguement is: 'YYYY[,DDD,HH,MM,SS,FFFFFF]' where valid delimiters are either commas (,), colons (:) or periods (.).</p>
+<p style="padding-left: 30px;">Limit processing to miniSEED records that contain or end before <i>time</i>.  The format of the <i>time</i> arguement is: 'YYYY[-MM-DDThh:mm:ss.ffff], or 'YYYY[,DDD,HH,MM,SS,FFFFFF]', or Unix/POSIX epoch seconds.</p>
 
-<b>-M </b><i>match</i>
+<b>-m </b><i>match</i>
 
-<p style="padding-left: 30px;">Limit processing to miniSEED records that match the <i>match</i> regular expression.  For each input record a source name string composed of 'NET_STA_LOC_CHAN_QUAL' is created and compared to the regular expression.  If the match expression begins with an '@' character it is assumed to indicate a file containing a list of expressions to match, see the \fBMATCH OR REJECT LIST FILE\fR section below.</p>
+<p style="padding-left: 30px;">Limit processing to miniSEED records that contain the <i>match</i> pattern, which is applied to the Source Identifier for each record, often following this pattern: 'FDSN:<network>_<station>_<location>_<band>_<source>_<subsource>'</p>
 
-<b>-R </b><i>reject</i>
+<b>-r </b><i>reject</i>
 
-<p style="padding-left: 30px;">Limit processing to miniSEED records that do not match the <i>reject</i> regular expression.  For each input record a source name string composed of 'NET_STA_LOC_CHAN_QUAL' is created and compared to the regular expression.  If the reject expression begins with an '@' character it is assumed to indicate a file containing a list of expressions to reject, see the \fBMATCH OR REJECT LIST FILE\fR section below.</p>
+<p style="padding-left: 30px;">Limit processing to miniSEED records that do _not_ contain the <i>reject</i> pattern, which is applied to the the Source Identifier for each record, often following this pattern: 'FDSN:<network>_<station>_<location>_<band>_<source>_<subsource>'</p>
 
 <b>-tt </b><i>secs</i>
 
@@ -89,7 +78,7 @@ mseed2esync [options] file1 [file2 file3 ...]
 
 ## <a id='input-files'>Input Files</a>
 
-<p >An input file name may be followed by an <b>@</b> charater followed by a byte offset.  In this case the program will interpret the byte offset as the starting offset into the file.  Useful for diagnosing specific records.  As an example an input file specified as <b>ANMO.mseed@8192</b> would result in the file <b>ANMO.mseed</b> being read starting at byte 8192.</p>
+<p >An input file name may be followed by an <b>@</b> charater followed by a byte range in the pattern <b>START[-END]</b>, where the END offset is optional.  As an example an input file specified as <b>ANMO.mseed@8192</b> would result in the file <b>ANMO.mseed</b> being read starting at byte 8192.  An optional end offset can be specified, e.g. <b>ANMO.mseed@8192-12288</b> would start reading at offset 8192 and stop after offset 12288.</p>
 
 ## <a id='input-list-file'>Input List File</a>
 
@@ -107,22 +96,6 @@ data/day2.mseed
 data/day3.mseed
 </pre>
 
-## <a id='match-or-reject-list-file'>Match Or Reject List File</a>
-
-<p >A list file used with either the <b>-M</b> or <b>-R</b> options contains a list of regular expressions (one on each line) that will be combined into a single compound expression.  The initial '@' character indicating a list file is not considered part of the file name.  As an example, if the following command line option was used:</p>
-
-<pre >
-<b>-M @match.list</b>
-</pre>
-
-<p >The 'match.list' file might look like this:</p>
-
-<pre >
-IU_ANMO_.*
-IU_ADK_00_BHZ.*
-II_BFO_00_BHZ_Q
-</pre>
-
 ## <a id='author'>Author</a>
 
 <pre >
@@ -131,4 +104,4 @@ EarthScope Data Services
 </pre>
 
 
-(man page 2012/04/27)
+(man page 2023/07/25)

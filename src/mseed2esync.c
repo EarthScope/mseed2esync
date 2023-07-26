@@ -17,44 +17,43 @@
 #include <time.h>
 #include <errno.h>
 #include <ctype.h>
-#include <regex.h>
 
 #include <libmseed.h>
 
 #include "md5.h"
 
-static void trimsegments (MSTraceList *mstl);
-static void printesynclist (MSTraceList *mstl, char *dccid);
-static void comparetraces (MSTraceList *mstl);
+static void trimsegments (MS3TraceList *mstl);
+static void printesynclist (MS3TraceList *mstl, char *dccid);
+static void comparetraces (MS3TraceList *mstl);
 static int processparam (int argcount, char **argvec);
 static char *getoptval (int argcount, char **argvec, int argopt);
-static int readregexfile (char *regexfile, char **pppattern);
-static int lisnumber (char *number);
 static int addfile (char *filename);
 static int addlistfile (char *filename);
+static int my_globmatch (const char *string, const char *pattern);
 static void usage (void);
 
-#define VERSION "0.4"
+#define VERSION "0.9"
 #define PACKAGE "mseed2esync"
 
 static int     retval       = 0;
 static flag    verbose      = 0;
 static flag    compare      = 0;
-static flag    dataquality  = 1;    /* Controls consideration of data quality */
+static flag    splitversion = 1;    /* Controls consideration of publication version */
 static flag    dataflag     = 1;    /* Controls decompression of data and production of MD5 */
-static double  timetol      = -1.0; /* Time tolerance for continuous traces */
-static double  sampratetol  = -1.0; /* Sample rate tolerance for continuous traces */
-static int     reclen       = -1;
-static char   *encodingstr  = 0;
 static char   *dccidstr     = 0;
-static hptime_t starttime   = HPTERROR;  /* Limit to records containing or after starttime */
-static hptime_t endtime     = HPTERROR;  /* Limit to records containing or before endtime */
-static regex_t *match       = 0;    /* Compiled match regex */
-static regex_t *reject      = 0;    /* Compiled reject regex */
+static nstime_t starttime   = NSTUNSET;  /* Limit to records containing or after starttime */
+static nstime_t endtime     = NSTUNSET;  /* Limit to records containing or before endtime */
+static char *match          = 0;    /* Glob match pattern */
+static char *reject         = 0;    /* Glob reject pattern */
+
+static double timetol; /* Time tolerance for continuous traces */
+static double sampratetol; /* Sample rate tolerance for continuous traces */
+static MS3Tolerance tolerance = { .time = NULL, .samprate = NULL };
+double timetol_callback (const MS3Record *msr) { return timetol; }
+double samprate_callback (const MS3Record *msr) { return sampratetol; }
 
 struct filelink {
   char *filename;
-  uint64_t offset;
   struct filelink *next;
 };
 
@@ -66,14 +65,10 @@ int
 main (int argc, char **argv)
 {
   struct filelink *flp;
-  MSRecord *msr = 0;
-  MSTraceList *mstl = 0;
+  MS3Record *msr = 0;
+  MS3TraceList *mstl = 0;
   int retcode = MS_NOERROR;
-
-  char envvariable[100];
-  off_t filepos = 0;
-
-  char srcname[50];
+  uint32_t flags = 0;
   char stime[30];
 
   /* Set default error message prefix */
@@ -83,65 +78,41 @@ main (int argc, char **argv)
   if ( processparam (argc, argv) < 0 )
     return 1;
 
-  /* Setup encoding environment variable if specified, ugly kludge */
-  if ( encodingstr )
-    {
-      snprintf (envvariable, sizeof(envvariable), "UNPACK_DATA_FORMAT=%s", encodingstr);
+  if (dataflag)
+	flags |= MSF_UNPACKDATA;
 
-      if ( putenv (envvariable) )
-	{
-	  ms_log (2, "Cannot set environment variable UNPACK_DATA_FORMAT\n");
-	  return 1;
-	}
-    }
+  flags |= MSF_PNAMERANGE;
 
-  mstl = mstl_init (NULL);
+  mstl = mstl3_init (NULL);
 
   flp = filelist;
 
   while ( flp != 0 )
     {
-      if ( verbose >= 2 )
-	{
-	  if ( flp->offset )
-	    ms_log (1, "Processing: %s (starting at byte %lld)\n", flp->filename, flp->offset);
-	  else
-	    ms_log (1, "Processing: %s\n", flp->filename);
-	}
-
-      /* Set starting byte offset if supplied as negative file position */
-      filepos = - flp->offset;
-
       /* Loop over the input file */
-      for (;;)
+      while ((retcode = ms3_readmsr (&msr, flp->filename, flags, verbose)) == MS_NOERROR )
 	{
-	  if ( (retcode = ms_readmsr (&msr, flp->filename, reclen, &filepos,
-				      NULL, 1, dataflag, verbose)) != MS_NOERROR )
-	    break;
-
 	  /* Check if record matches start/end time criteria */
-	  if ( starttime != HPTERROR || endtime != HPTERROR )
+	  if ( starttime != NSTUNSET || endtime != NSTUNSET )
 	    {
-	      hptime_t recendtime = msr_endtime (msr);
+	      nstime_t recendtime = msr3_endtime (msr);
 
-	      if ( starttime != HPTERROR && (msr->starttime < starttime && ! (msr->starttime <= starttime && recendtime >= starttime)) )
+	      if ( starttime != NSTUNSET && (msr->starttime < starttime && ! (msr->starttime <= starttime && recendtime >= starttime)) )
 		{
 		  if ( verbose >= 3 )
 		    {
-		      msr_srcname (msr, srcname, 1);
-		      ms_hptime2seedtimestr (msr->starttime, stime, 1);
-		      ms_log (1, "Skipping (starttime) %s, %s\n", srcname, stime);
+		      ms_nstime2timestr (msr->starttime, stime, SEEDORDINAL, NANO_MICRO);
+		      ms_log (1, "Skipping (starttime) %s, %s\n", msr->sid, stime);
 		    }
 		  continue;
 		}
 
-	      if ( endtime != HPTERROR && (recendtime > endtime && ! (msr->starttime <= endtime && recendtime >= endtime)) )
+	      if ( endtime != NSTUNSET && (recendtime > endtime && ! (msr->starttime <= endtime && recendtime >= endtime)) )
 		{
 		  if ( verbose >= 3 )
 		    {
-		      msr_srcname (msr, srcname, 1);
-		      ms_hptime2seedtimestr (msr->starttime, stime, 1);
-		      ms_log (1, "Skipping (starttime) %s, %s\n", srcname, stime);
+		      ms_nstime2timestr (msr->starttime, stime, SEEDORDINAL, NANO_MICRO);
+		      ms_log (1, "Skipping (starttime) %s, %s\n", msr->sid, stime);
 		    }
 		  continue;
 		}
@@ -149,58 +120,55 @@ main (int argc, char **argv)
 
 	  if ( match || reject )
 	    {
-	      /* Generate the srcname with the quality code */
-	      msr_srcname (msr, srcname, 1);
+        /* Check if record is matched by the match pattern */
+        if (match)
+        {
+          if (my_globmatch (msr->sid, match) == 0)
+          {
+            if (verbose >= 3)
+            {
+              ms_nstime2timestr (msr->starttime, stime, ISOMONTHDAY, NANO);
+              ms_log (1, "Skipping (match) %s, %s\n", msr->sid, stime);
+            }
+            continue;
+          }
+        }
 
-	      /* Check if record is matched by the match regex */
-	      if ( match )
-		{
-		  if ( regexec ( match, srcname, 0, 0, 0) != 0 )
-		    {
-		      if ( verbose >= 3 )
-			{
-			  ms_hptime2seedtimestr (msr->starttime, stime, 1);
-			  ms_log (1, "Skipping (match) %s, %s\n", srcname, stime);
-			}
-		      continue;
-		    }
-		}
-
-	      /* Check if record is rejected by the reject regex */
-	      if ( reject )
-		{
-		  if ( regexec ( reject, srcname, 0, 0, 0) == 0 )
-		    {
-		      if ( verbose >= 3 )
-			{
-			  ms_hptime2seedtimestr (msr->starttime, stime, 1);
-			  ms_log (1, "Skipping (reject) %s, %s\n", srcname, stime);
-			}
-		      continue;
-		    }
-		}
+        /* Check if record is rejected by the reject pattern */
+        if (reject)
+        {
+          if (my_globmatch (msr->sid, reject) != 0)
+          {
+            if (verbose >= 3)
+            {
+              ms_nstime2timestr (msr->starttime, stime, ISOMONTHDAY, NANO);
+              ms_log (1, "Skipping (reject) %s, %s\n", msr->sid, stime);
+            }
+            continue;
+          }
+        }
 	    }
 
 	  /* Add to TraceList */
-	  mstl_addmsr (mstl, msr, dataquality, 1, timetol, sampratetol);
+	  mstl3_addmsr (mstl, msr, splitversion, flags, 1, &tolerance);
 	}
 
-      /* Print error if not EOF and not counting down records */
+      /* Print error if not EOF */
       if ( retcode != MS_ENDOFFILE )
 	{
 	  ms_log (2, "Cannot read %s: %s\n", flp->filename, ms_errorstr(retcode));
-	  ms_readmsr (&msr, NULL, 0, NULL, NULL, 0, 0, 0);
+	  ms3_readmsr (&msr, NULL, 0, 0);
 	  exit (1);
 	}
 
       /* Make sure everything is cleaned up */
-      ms_readmsr (&msr, NULL, 0, NULL, NULL, 0, 0, 0);
+      ms3_readmsr (&msr, NULL, 0, 0);
 
       flp = flp->next;
     } /* End of looping over file list */
 
   /* Trim each segment to specified time range */
-  if ( starttime != HPTERROR || endtime != HPTERROR )
+  if ( starttime != NSTUNSET || endtime != NSTUNSET )
     trimsegments (mstl);
 
   /* Print the ESYNC listing */
@@ -210,7 +178,7 @@ main (int argc, char **argv)
     comparetraces (mstl);
 
   if ( mstl )
-    mstl_free (&mstl, 0);
+    mstl3_free (&mstl, 0);
 
   return retval;
 }  /* End of main() */
@@ -230,14 +198,14 @@ main (int argc, char **argv)
  * Returns 0 on success, and -1 on failure
  ***************************************************************************/
 static void
-trimsegments (MSTraceList *mstl)
+trimsegments (MS3TraceList *mstl)
 {
-  MSTraceID *id = 0;
-  MSTraceSeg *seg = 0;
+  MS3TraceID *id = 0;
+  MS3TraceSeg *seg = 0;
 
-  hptime_t sampletime;
-  hptime_t hpdelta;
-  hptime_t hptimetol = 0;
+  nstime_t sampletime;
+  nstime_t nsdelta;
+  nstime_t nstimetol = 0;
   int64_t trimcount;
   int samplesize;
   void *datasamples;
@@ -248,7 +216,7 @@ trimsegments (MSTraceList *mstl)
     }
 
   /* Loop through trace list */
-  id = mstl->traces;
+  id = mstl->traces.next[0];
   while ( id )
     {
       /* Loop through segment list */
@@ -263,24 +231,24 @@ trimsegments (MSTraceList *mstl)
 	    }
 
 	  /* Calculate high-precision sample period */
-	  hpdelta = (hptime_t) (( seg->samprate ) ? (HPTMODULUS / seg->samprate) : 0.0);
+	  nsdelta = (nstime_t) (( seg->samprate ) ? (NSTMODULUS / seg->samprate) : 0.0);
 
 	  /* Calculate high-precision time tolerance */
 	  if ( timetol == -1.0 )
-	    hptimetol = (hptime_t) (0.5 * hpdelta);   /* Default time tolerance is 1/2 sample period */
+	    nstimetol = (nstime_t) (0.5 * nsdelta);   /* Default time tolerance is 1/2 sample period */
 	  else if ( timetol >= 0.0 )
-	    hptimetol = (hptime_t) (timetol * HPTMODULUS);
+	    nstimetol = (nstime_t) (timetol * NSTMODULUS);
 
 	  samplesize = ms_samplesize (seg->sampletype);
 
 	  /* Trim samples from beginning of segment if earlier than starttime */
-	  if ( starttime != HPTERROR && seg->starttime < starttime )
+	  if ( starttime != NSTUNSET && seg->starttime < starttime )
 	    {
 	      trimcount = 0;
 	      sampletime = seg->starttime;
-	      while ( sampletime < (starttime - hptimetol) )
+	      while ( sampletime < (starttime - nstimetol) )
 		{
-		  sampletime += hpdelta;
+		  sampletime += nsdelta;
 		  trimcount++;
 		}
 
@@ -288,7 +256,7 @@ trimsegments (MSTraceList *mstl)
 		{
 		  if ( verbose )
 		    ms_log (1, "Trimming %lld samples from beginning of trace for %s\n",
-			    (long long)trimcount, id->srcname);
+			    (long long)trimcount, id->sid);
 
 		  memmove (seg->datasamples,
 			   (char *)seg->datasamples + (trimcount * samplesize),
@@ -298,25 +266,25 @@ trimsegments (MSTraceList *mstl)
 
 		  if ( ! datasamples )
 		    {
-		      ms_log (2, stderr, "Cannot reallocate sample buffer\n");
+		      ms_log (2, "Cannot reallocate sample buffer\n");
 		      return;
 		    }
 
 		  seg->datasamples = datasamples;
-		  seg->starttime += MS_EPOCH2HPTIME((trimcount / seg->samprate));
+		  seg->starttime += MS_EPOCH2NSTIME((trimcount / seg->samprate));
 		  seg->numsamples -= trimcount;
 		  seg->samplecnt -= trimcount;
 		}
 	    }
 
 	  /* Trim samples from end of segment if later than endtime */
-	  if ( endtime != HPTERROR && seg->endtime > endtime )
+	  if ( endtime != NSTUNSET && seg->endtime > endtime )
 	    {
 	      trimcount = 0;
 	      sampletime = seg->endtime;
-	      while ( sampletime > (endtime + hptimetol) )
+	      while ( sampletime > (endtime + nstimetol) )
 		{
-		  sampletime -= hpdelta;
+		  sampletime -= nsdelta;
 		  trimcount++;
 		}
 
@@ -324,18 +292,18 @@ trimsegments (MSTraceList *mstl)
 		{
 		  if ( verbose )
 		    ms_log (1, "Trimming %lld samples from end of trace for %s\n",
-			    (long long)trimcount, id->srcname);
+			    (long long)trimcount, id->sid);
 
 		  datasamples = realloc (seg->datasamples, (seg->numsamples - trimcount) * samplesize);
 
 		  if ( ! datasamples )
 		    {
-		      ms_log (2, stderr, "Cannot reallocate sample buffer\n");
+		      ms_log (2, "Cannot reallocate sample buffer\n");
 		      return;
 		    }
 
 		  seg->datasamples = datasamples;
-		  seg->endtime -= MS_EPOCH2HPTIME((trimcount / seg->samprate));
+		  seg->endtime -= MS_EPOCH2NSTIME((trimcount / seg->samprate));
 		  seg->numsamples -= trimcount;
 		  seg->samplecnt -= trimcount;
 		}
@@ -344,7 +312,7 @@ trimsegments (MSTraceList *mstl)
 	  seg = seg->next;
 	}
 
-      id = id->next;
+      id = id->next[0];
     }
 
   return;
@@ -354,18 +322,23 @@ trimsegments (MSTraceList *mstl)
 /***************************************************************************
  * printesynclist():
  *
- * Print the MSTraceList as an Enhanced SYNC Listing.
+ * Print the MS3TraceList as an Enhanced SYNC Listing.
  *
  * Returns 0 on success, and -1 on failure
  ***************************************************************************/
 static void
-printesynclist (MSTraceList *mstl, char *dccid)
+printesynclist (MS3TraceList *mstl, char *dccid)
 {
-  MSTraceID *id = 0;
-  MSTraceSeg *seg = 0;
+  MS3TraceID *id = 0;
+  MS3TraceSeg *seg = 0;
   char starttime[30];
   char endtime[30];
   char yearday[30];
+  char network[11];
+  char station[11];
+  char location[11];
+  char channel[11];
+  char quality[10];
   time_t now;
   struct tm *nt;
 
@@ -391,15 +364,18 @@ printesynclist (MSTraceList *mstl, char *dccid)
   ms_log (0, "%s|%s\n", (dccid)?dccid:"DCC", yearday);
 
   /* Loop through trace list */
-  id = mstl->traces;
+  id = mstl->traces.next[0];
   while ( id )
     {
+	  /* Split SID into network, station, location and channel */
+	  ms_sid2nslc (id->sid, network, station, location, channel);
+
       /* Loop through segment list */
       seg = id->first;
       while ( seg )
 	{
-	  ms_hptime2seedtimestr (seg->starttime, starttime, 1);
-	  ms_hptime2seedtimestr (seg->endtime, endtime, 1);
+	  ms_nstime2timestr (seg->starttime, starttime, SEEDORDINAL, NANO_MICRO);
+	  ms_nstime2timestr (seg->endtime, endtime, SEEDORDINAL, NANO_MICRO);
 
 	  /* Calculate MD5 hash of sample values if samples present */
 	  if ( seg->datasamples )
@@ -414,18 +390,42 @@ printesynclist (MSTraceList *mstl, char *dccid)
 		sprintf (digeststr+(idx*2), "%02x", digest[idx]);
 	    }
 
+	  /* Set quality flag, mapping to legacy codes for backwards compatibility */
+	  switch (id->pubversion)
+	  {
+	  case 1:
+	    quality[0] = 'D';
+		quality[1] = 0;
+	    break;
+	  case 2:
+	    quality[0] = 'R';
+		quality[1] = 0;
+	    break;
+	  case 3:
+	    quality[0] = 'Q';
+		quality[1] = 0;
+	    break;
+      case 4:
+	    quality[0] = 'M';
+		quality[1] = 0;
+		break;
+	  default:
+	  	snprintf (quality, sizeof(quality), "%d", id->pubversion);
+	    break;
+	  }
+
 	  /* Print SYNC line */
-	  ms_log (0, "%s|%s|%s|%s|%s|%s||%.10g|%lld|||%.1s|%.32s|||%s\n",
-		  id->network, id->station, id->location, id->channel,
+	  ms_log (0, "%s|%s|%s|%s|%s|%s||%.10g|%lld|||%s|%.32s|||%s\n",
+		  network, station, location, channel,
 		  starttime, endtime, seg->samprate, (long long int)seg->samplecnt,
-		  (id->dataquality) ? &(id->dataquality) : "",
+		  (id->pubversion) ? quality : "",
 		  (seg->datasamples) ? digeststr : "",
 		  yearday);
 
 	  seg = seg->next;
 	}
 
-      id = id->next;
+      id = id->next[0];
     }
 
   return;
@@ -440,12 +440,12 @@ printesynclist (MSTraceList *mstl, char *dccid)
  * Returns 0 on success, and -1 on failure
  ***************************************************************************/
 static void
-comparetraces (MSTraceList *mstl)
+comparetraces (MS3TraceList *mstl)
 {
-  MSTraceID *id = 0;
-  MSTraceID *tid = 0;
-  MSTraceSeg *seg = 0;
-  MSTraceSeg *tseg = 0;
+  MS3TraceID *id = 0;
+  MS3TraceID *tid = 0;
+  MS3TraceSeg *seg = 0;
+  MS3TraceSeg *tseg = 0;
   char start[30];
   char end[30];
   char tstart[30];
@@ -458,19 +458,19 @@ comparetraces (MSTraceList *mstl)
     }
 
   /* Loop through trace list */
-  id = mstl->traces;
+  id = mstl->traces.next[0];
   while ( id )
     {
       /* Loop through segment list */
       seg = id->first;
       while ( seg )
 	{
-	  ms_hptime2seedtimestr (seg->starttime, start, 1);
-	  ms_hptime2seedtimestr (seg->endtime, end, 1);
+	  ms_nstime2timestr (seg->starttime, start, SEEDORDINAL, NANO_MICRO);
+	  ms_nstime2timestr (seg->endtime, end, SEEDORDINAL, NANO_MICRO);
 
 	  if ( ! seg->datasamples )
 	    {
-	      ms_log (2, "%s, %s, %s :: No data samples\n", id->srcname, start, end);
+	      ms_log (2, "%s, %s, %s :: No data samples\n", id->sid, start, end);
 	      seg = seg->next;
 	      continue;
 	    }
@@ -485,17 +485,17 @@ comparetraces (MSTraceList *mstl)
 		{
 		  if ( ! tseg->datasamples )
 		    {
-		      ms_log (1, "%s, %s, %s :: No data samples\n", tid->srcname, tstart, tend);
+		      ms_log (1, "%s, %s, %s :: No data samples\n", tid->sid, tstart, tend);
 		      tseg = tseg->next;
 		      continue;
 		    }
 
-		  ms_hptime2seedtimestr (tseg->starttime, tstart, 1);
-		  ms_hptime2seedtimestr (tseg->endtime, tend, 1);
+		  ms_nstime2timestr (tseg->starttime, tstart, SEEDORDINAL, NANO_MICRO);
+		  ms_nstime2timestr (tseg->endtime, tend, SEEDORDINAL, NANO_MICRO);
 
 		  if ( seg->sampletype != tseg->sampletype )
 		    {
-		      ms_log (1, "%s and %s :: Sample type mismatch\n", id->srcname, tid->srcname);
+		      ms_log (1, "%s and %s :: Sample type mismatch\n", id->sid, tid->sid);
 		      tseg = tseg->next;
 		      continue;
 		    }
@@ -503,8 +503,8 @@ comparetraces (MSTraceList *mstl)
 		  if ( seg->numsamples != tseg->numsamples )
 		    {
 		      ms_log (1, "%s (%lld) and %s (%lld) :: Sample count mismatch\n",
-			      id->srcname, (long long int) seg->numsamples,
-			      tid->srcname, (long long int) tseg->numsamples);
+			      id->sid, (long long int) seg->numsamples,
+			      tid->sid, (long long int) tseg->numsamples);
 		      tseg = tseg->next;
 		      continue;
 		    }
@@ -572,19 +572,19 @@ comparetraces (MSTraceList *mstl)
 			      (long long int)idx);
 		    }
 
-		  ms_log (0, "  %s  %s  %s\n", id->srcname, start, end);
-		  ms_log (0, "  %s  %s  %s\n", tid->srcname, tstart, tend);
+		  ms_log (0, "  %s  %s  %s\n", id->sid, start, end);
+		  ms_log (0, "  %s  %s  %s\n", tid->sid, tstart, tend);
 
 		  tseg = tseg->next;
 		}
 
-	      tid = tid->next;
+	      tid = tid->next[0];
 	    }
 
 	  seg = seg->next;
 	}
 
-      id = id->next;
+      id = id->next[0];
     }
 
   return;
@@ -601,8 +601,8 @@ static int
 processparam (int argcount, char **argvec)
 {
   int optind;
-  char *matchpattern = 0;
-  char *rejectpattern = 0;
+  char *match_pattern = 0;
+  char *reject_pattern = 0;
   char *tptr;
 
   /* Process all command line arguments */
@@ -622,14 +622,6 @@ processparam (int argcount, char **argvec)
 	{
 	  verbose += strspn (&argvec[optind][1], "v");
 	}
-      else if (strcmp (argvec[optind], "-r") == 0)
-	{
-	  reclen = strtol (getoptval(argcount, argvec, optind++), NULL, 10);
-	}
-      else if (strcmp (argvec[optind], "-e") == 0)
-	{
-	  encodingstr = getoptval(argcount, argvec, optind++);
-	}
       else if (strcmp (argvec[optind], "-D") == 0)
 	{
 	  dccidstr = getoptval(argcount, argvec, optind++);
@@ -640,31 +632,33 @@ processparam (int argcount, char **argvec)
 	}
       else if (strcmp (argvec[optind], "-ts") == 0)
 	{
-	  starttime = ms_seedtimestr2hptime (getoptval(argcount, argvec, optind++));
-	  if ( starttime == HPTERROR )
+	  starttime = ms_timestr2nstime (getoptval(argcount, argvec, optind++));
+	  if ( starttime == NSTUNSET )
 	    return -1;
 	}
       else if (strcmp (argvec[optind], "-te") == 0)
 	{
-	  endtime = ms_seedtimestr2hptime (getoptval(argcount, argvec, optind++));
-	  if ( endtime == HPTERROR )
+	  endtime = ms_timestr2nstime (getoptval(argcount, argvec, optind++));
+	  if ( endtime == NSTUNSET )
 	    return -1;
 	}
-      else if (strcmp (argvec[optind], "-M") == 0)
+      else if (strcmp (argvec[optind], "-m") == 0)
 	{
-	  matchpattern = strdup (getoptval(argcount, argvec, optind++));
+	  match_pattern = strdup (getoptval(argcount, argvec, optind++));
 	}
-      else if (strcmp (argvec[optind], "-R") == 0)
+      else if (strcmp (argvec[optind], "-r") == 0)
 	{
-	  rejectpattern = strdup (getoptval(argcount, argvec, optind++));
+	  reject_pattern = strdup (getoptval(argcount, argvec, optind++));
 	}
       else if (strcmp (argvec[optind], "-tt") == 0)
 	{
-	  timetol = strtod (getoptval(argcount, argvec, optind++), NULL);
+      timetol = strtod (getoptval (argcount, argvec, optind++), NULL);
+      tolerance.time = timetol_callback;
 	}
       else if (strcmp (argvec[optind], "-rt") == 0)
 	{
-	  sampratetol = strtod (getoptval(argcount, argvec, optind++), NULL);
+      sampratetol = strtod (getoptval (argcount, argvec, optind++), NULL);
+      tolerance.samprate = samprate_callback;
 	}
       else if (strncmp (argvec[optind], "-", 1) == 0 &&
 	       strlen (argvec[optind]) > 1 )
@@ -707,68 +701,29 @@ processparam (int argcount, char **argvec)
       exit (1);
     }
 
-  /* Expand match pattern from a file if prefixed by '@' */
-  if ( matchpattern )
+  /* Add wildcards to match pattern for logical "contains" */
+  if (match_pattern)
+  {
+    if ((match = malloc (strlen (match_pattern) + 3)) == NULL)
     {
-      if ( *matchpattern == '@' )
-	{
-	  tptr = strdup(matchpattern + 1); /* Skip the @ sign */
-	  free (matchpattern);
-	  matchpattern = 0;
-
-	  if ( readregexfile (tptr, &matchpattern) <= 0 )
-	    {
-	      ms_log (2, "Cannot read match pattern regex file\n");
-	      exit (1);
-	    }
-
-	  free (tptr);
-	}
+      ms_log (2, "Error allocating memory\n");
+      exit (1);
     }
 
-  /* Expand reject pattern from a file if prefixed by '@' */
-  if ( rejectpattern )
+    snprintf (match, strlen (match_pattern) + 3, "*%s*", match_pattern);
+  }
+
+  /* Add wildcards to reject pattern for logical "contains" */
+  if (reject_pattern)
+  {
+    if ((reject = malloc (strlen (reject_pattern) + 3)) == NULL)
     {
-      if ( *rejectpattern == '@' )
-	{
-	  tptr = strdup(rejectpattern + 1); /* Skip the @ sign */
-	  free (rejectpattern);
-	  rejectpattern = 0;
-
-	  if ( readregexfile (tptr, &rejectpattern) <= 0 )
-	    {
-	      ms_log (2, "Cannot read reject pattern regex file\n");
-	      exit (1);
-	    }
-
-	  free (tptr);
-	}
+      ms_log (2, "Error allocating memory\n");
+      exit (1);
     }
 
-  /* Compile match and reject patterns */
-  if ( matchpattern )
-    {
-      match = (regex_t *) malloc (sizeof(regex_t));
-
-      if ( regcomp (match, matchpattern, REG_EXTENDED) != 0)
-	{
-	  ms_log (2, "Cannot compile match regex: '%s'\n", matchpattern);
-	}
-
-      free (matchpattern);
-    }
-
-  if ( rejectpattern )
-    {
-      reject = (regex_t *) malloc (sizeof(regex_t));
-
-      if ( regcomp (reject, rejectpattern, REG_EXTENDED) != 0)
-	{
-	  ms_log (2, "Cannot compile reject regex: '%s'\n", rejectpattern);
-	}
-
-      free (rejectpattern);
-    }
+    snprintf (reject, strlen (reject_pattern) + 3, "*%s*", reject_pattern);
+  }
 
   /* Report the program version */
   if ( verbose )
@@ -804,12 +759,6 @@ getoptval (int argcount, char **argvec, int argopt)
     if ( strcmp (argvec[argopt+1], "-") == 0 )
       return argvec[argopt+1];
 
-  /* Special cases of '-gmin' and '-gmax' with negative numbers */
-  if ( (argopt+1) < argcount &&
-       (strcmp (argvec[argopt], "-gmin") == 0 || (strcmp (argvec[argopt], "-gmax") == 0)))
-    if ( lisnumber(argvec[argopt+1]) )
-      return argvec[argopt+1];
-
   if ( (argopt+1) < argcount && *argvec[argopt+1] != '-' )
     return argvec[argopt+1];
 
@@ -817,138 +766,6 @@ getoptval (int argcount, char **argvec, int argopt)
   exit (1);
   return 0;
 }  /* End of getoptval() */
-
-
-/***************************************************************************
- * readregexfile:
- *
- * Read a list of regular expressions from a file and combine them
- * into a single, compound expression which is returned in *pppattern.
- * The return buffer is reallocated as need to hold the growing
- * pattern.  When called *pppattern should not point to any associated
- * memory.
- *
- * Returns the number of regexes parsed from the file or -1 on error.
- ***************************************************************************/
-static int
-readregexfile (char *regexfile, char **pppattern)
-{
-  FILE *fp;
-  char  line[1024];
-  char  linepattern[1024];
-  int   regexcnt = 0;
-  int   lengthbase;
-  int   lengthadd;
-
-  if ( ! regexfile )
-    {
-      ms_log (2, "readregexfile: regex file not supplied\n");
-      return -1;
-    }
-
-  if ( ! pppattern )
-    {
-      ms_log (2, "readregexfile: pattern string buffer not supplied\n");
-      return -1;
-    }
-
-  /* Open the regex list file */
-  if ( (fp = fopen (regexfile, "rb")) == NULL )
-    {
-      ms_log (2, "Cannot open regex list file %s: %s\n",
-	      regexfile, strerror (errno));
-      return -1;
-    }
-
-  if ( verbose )
-    ms_log (1, "Reading regex list from %s\n", regexfile);
-
-  *pppattern = NULL;
-
-  while ( (fgets (line, sizeof(line), fp)) !=  NULL)
-    {
-      /* Trim spaces and skip if empty lines */
-      if ( sscanf (line, " %s ", linepattern) != 1 )
-	continue;
-
-      /* Skip comment lines */
-      if ( *linepattern == '#' )
-	continue;
-
-      regexcnt++;
-
-      /* Add regex to compound regex */
-      if ( *pppattern )
-	{
-	  lengthbase = strlen(*pppattern);
-	  lengthadd = strlen(linepattern) + 4; /* Length of addition plus 4 characters: |()\0 */
-
-	  *pppattern = realloc (*pppattern, lengthbase + lengthadd);
-
-	  if ( *pppattern )
-	    {
-	      snprintf ((*pppattern)+lengthbase, lengthadd, "|(%s)", linepattern);
-	    }
-	  else
-	    {
-	      ms_log (2, "Cannot allocate memory for regex string\n");
-	      return -1;
-	    }
-	}
-      else
-	{
-	  lengthadd = strlen(linepattern) + 3; /* Length of addition plus 3 characters: ()\0 */
-
-	  *pppattern = malloc (lengthadd);
-
-	  if ( *pppattern )
-	    {
-	      snprintf (*pppattern, lengthadd, "(%s)", linepattern);
-	    }
-	  else
-	    {
-	      ms_log (2, "Cannot allocate memory for regex string\n");
-	      return -1;
-	    }
-	}
-    }
-
-  fclose (fp);
-
-  return regexcnt;
-}  /* End of readregexfile() */
-
-
-/***************************************************************************
- * lisnumber:
- *
- * Test if the string is all digits allowing an initial minus sign.
- *
- * Return 0 if not a number otherwise 1.
- ***************************************************************************/
-static int
-lisnumber (char *number)
-{
-  int idx = 0;
-
-  while ( *(number+idx) )
-    {
-      if ( idx == 0 && *(number+idx) == '-' )
-	{
-	  idx++;
-	  continue;
-	}
-
-      if ( ! isdigit ((int) *(number+idx)) )
-	{
-	  return 0;
-	}
-
-      idx++;
-    }
-
-  return 1;
-}  /* End of lisnumber() */
 
 
 /***************************************************************************
@@ -962,7 +779,6 @@ static int
 addfile (char *filename)
 {
   struct filelink *newlp;
-  char *at;
 
   if ( filename == NULL )
     {
@@ -976,17 +792,6 @@ addfile (char *filename)
     {
       ms_log (2, "addfile(): Cannot allocate memory\n");
       return -1;
-    }
-
-  /* Check for starting offset */
-  if ( (at = strrchr (filename, '@')) )
-    {
-      *at++ = '\0';
-      newlp->offset = strtoull (at, NULL, 10);
-    }
-  else
-    {
-      newlp->offset = 0;
     }
 
   newlp->filename = strdup(filename);
@@ -1067,6 +872,173 @@ addlistfile (char *filename)
 }  /* End of addlistfile() */
 
 
+/***********************************************************************
+ * robust glob pattern matcher
+ * ozan s. yigit/dec 1994
+ * public domain
+ *
+ * glob patterns:
+ *	*	matches zero or more characters
+ *	?	matches any single character
+ *	[set]	matches any character in the set
+ *	[^set]	matches any character NOT in the set
+ *		where a set is a group of characters or ranges. a range
+ *		is written as two characters seperated with a hyphen: a-z denotes
+ *		all characters between a to z inclusive.
+ *	[-set]	set matches a literal hypen and any character in the set
+ *	[]set]	matches a literal close bracket and any character in the set
+ *
+ *	char	matches itself except where char is '*' or '?' or '['
+ *	\char	matches char, including any pattern character
+ *
+ * examples:
+ *	a*c		ac abc abbc ...
+ *	a?c		acc abc aXc ...
+ *	a[a-z]c		aac abc acc ...
+ *	a[-a-z]c	a-c aac abc ...
+ *
+ * Revision 1.4  2004/12/26  12:38:00  ct
+ * Changed function name (amatch -> globmatch), variables and
+ * formatting for clarity.  Also add matching header globmatch.h.
+ *
+ * Revision 1.3  1995/09/14  23:24:23  oz
+ * removed boring test/main code.
+ *
+ * Revision 1.2  94/12/11  10:38:15  oz
+ * charset code fixed. it is now robust and interprets all
+ * variations of charset [i think] correctly, including [z-a] etc.
+ *
+ * Revision 1.1  94/12/08  12:45:23  oz
+ * Initial revision
+ ***********************************************************************/
+
+#define GLOBMATCH_TRUE 1
+#define GLOBMATCH_FALSE 0
+#define GLOBMATCH_NEGATE '^' /* std char set negation char */
+
+/***********************************************************************
+ * my_globmatch:
+ *
+ * Check if a string matches a globbing pattern.
+ *
+ * Return 0 if string does not match pattern and non-zero otherwise.
+ **********************************************************************/
+static int
+my_globmatch (const char *string, const char *pattern)
+{
+  int negate;
+  int match;
+  int c;
+
+  while (*pattern)
+  {
+    if (!*string && *pattern != '*')
+      return GLOBMATCH_FALSE;
+
+    switch (c = *pattern++)
+    {
+
+    case '*':
+      while (*pattern == '*')
+        pattern++;
+
+      if (!*pattern)
+        return GLOBMATCH_TRUE;
+
+      if (*pattern != '?' && *pattern != '[' && *pattern != '\\')
+        while (*string && *pattern != *string)
+          string++;
+
+      while (*string)
+      {
+        if (my_globmatch (string, pattern))
+          return GLOBMATCH_TRUE;
+        string++;
+      }
+      return GLOBMATCH_FALSE;
+
+    case '?':
+      if (*string)
+        break;
+      return GLOBMATCH_FALSE;
+
+      /* set specification is inclusive, that is [a-z] is a, z and
+       * everything in between. this means [z-a] may be interpreted
+       * as a set that contains z, a and nothing in between.
+       */
+    case '[':
+      if (*pattern != GLOBMATCH_NEGATE)
+        negate = GLOBMATCH_FALSE;
+      else
+      {
+        negate = GLOBMATCH_TRUE;
+        pattern++;
+      }
+
+      match = GLOBMATCH_FALSE;
+
+      while (!match && (c = *pattern++))
+      {
+        if (!*pattern)
+          return GLOBMATCH_FALSE;
+
+        if (*pattern == '-') /* c-c */
+        {
+          if (!*++pattern)
+            return GLOBMATCH_FALSE;
+          if (*pattern != ']')
+          {
+            if (*string == c || *string == *pattern ||
+                (*string > c && *string < *pattern))
+              match = GLOBMATCH_TRUE;
+          }
+          else
+          { /* c-] */
+            if (*string >= c)
+              match = GLOBMATCH_TRUE;
+            break;
+          }
+        }
+        else /* cc or c] */
+        {
+          if (c == *string)
+            match = GLOBMATCH_TRUE;
+          if (*pattern != ']')
+          {
+            if (*pattern == *string)
+              match = GLOBMATCH_TRUE;
+          }
+          else
+            break;
+        }
+      }
+
+      if (negate == match)
+        return GLOBMATCH_FALSE;
+
+      /* If there is a match, skip past the charset and continue on */
+      while (*pattern && *pattern != ']')
+        pattern++;
+      if (!*pattern++) /* oops! */
+        return GLOBMATCH_FALSE;
+      break;
+
+    case '\\':
+      if (*pattern)
+        c = *pattern++;
+    default:
+      if (c != *string)
+        return GLOBMATCH_FALSE;
+      break;
+    }
+
+    string++;
+  }
+
+  return !*string;
+} /* End of my_globmatch() */
+
+
 /***************************************************************************
  * usage():
  * Print the usage message.
@@ -1081,8 +1053,6 @@ usage (void)
 	   " -V           Report program version\n"
 	   " -h           Show this usage message\n"
 	   " -v           Be more verbose, multiple flags can be used\n"
-	   " -r reclen    Specify record length in bytes, default is autodetection\n"
-	   " -e encoding  Specify encoding format of data samples\n"
 	   " -D DCCID     Specify the DCC identifier for SYNC header\n"
 	   " -C           Compare sample values of time series, to diagnose mismatches\n"
 	   "\n"
@@ -1090,9 +1060,9 @@ usage (void)
 	   " -ts time     Limit to samples that start on or after time\n"
 	   " -te time     Limit to samples that end on or before time\n"
 	   "                time format: 'YYYY[,DDD,HH,MM,SS,FFFFFF]' delimiters: [,:.]\n"
-	   " -M match     Limit to records matching the specified regular expression\n"
-	   " -R reject    Limit to records not matching the specfied regular expression\n"
-	   "                Regular expressions are applied to: 'NET_STA_LOC_CHAN_QUAL'\n"
+       " -m match     Limit to records containing the specified pattern\n"
+       " -r reject    Limit to records not containing the specfied pattern\n"
+       "                Patterns are applied to: 'FDSN:NET_STA_LOC_BAND_SOURCE_SS'\n"
 	   " -tt secs     Specify a time tolerance for continuous traces\n"
 	   " -rt diff     Specify a sample rate tolerance for continuous traces\n"
 	   "\n"
